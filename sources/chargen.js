@@ -992,6 +992,112 @@ $(".exportSplitAnimations").click(async function() {
     }
   });
 
+  $(".exportCategorySpritesheets").click(async () => {
+    try {
+      // Get currently selected category from the first selected item
+      const selectedItems = $("#chooser input[type=radio]:checked");
+      if (selectedItems.length === 0) {
+        alert("Please select a category first.");
+        return;
+      }
+
+      // Get the type_name from the first selected item
+      const firstSelected = selectedItems.first();
+      const categoryType = firstSelected.attr("name");
+      
+      if (!categoryType) {
+        alert("Unable to determine category type.");
+        return;
+      }
+
+      // Find all items of this category type
+      const categoryItems = $("#chooser input[type=radio][name='" + categoryType + "']");
+      if (categoryItems.length === 0) {
+        alert("No items found for this category.");
+        return;
+      }
+
+      const zip = newZip();
+      const bodyType = getBodyTypeName();
+      
+      // Create folder structure: Category/Subcategory/
+      const categoryFolder = zip.folder(categoryType);
+      if (!categoryFolder) {
+        throw new Error("Failed to create category folder in zip file");
+      }
+
+      const exportedItems = [];
+      const failedItems = [];
+
+      const itemCanvas = document.createElement("canvas");
+      itemCanvas.width = canvas.width;
+      itemCanvas.height = canvas.height;
+      const itemCtx = itemCanvas.getContext("2d");
+
+      // Group items by subcategory (parentName)
+      const subcategories = {};
+      categoryItems.each(function() {
+        const $item = $(this);
+        const parentName = $item.attr("parentName");
+        const variant = $item.attr("variant");
+        
+        if (!subcategories[parentName]) {
+          subcategories[parentName] = [];
+        }
+        
+        // Create item data similar to itemsToDraw structure
+        const itemData = {
+          fileName: $item.data(`layer_1_${bodyType}`) || "",
+          zPos: $item.data("layer_1_zpos") || 0,
+          parentName: parentName,
+          name: parentName,
+          variant: variant,
+          supportedAnimations: "spellcast,thrust,walk,slash,shoot,hurt,watering,idle,jump,run,sit,emote,climb,combat"
+        };
+        
+        subcategories[parentName].push(itemData);
+      });
+
+      // Process each subcategory
+      for (const [subcategoryName, items] of Object.entries(subcategories)) {
+        const subcategoryFolder = categoryFolder.folder(subcategoryName);
+        
+        // Process each variant in the subcategory
+        for (const itemToDraw of items) {
+          try {
+            itemCtx.clearRect(0, 0, itemCanvas.width, itemCanvas.height);
+            drawItemSheet(itemCanvas, itemToDraw, addedCustomAnimations);
+
+            const fileName = `${subcategoryName}_${itemToDraw.variant}.png`;
+            const blob = await canvasToBlob(itemCanvas);
+            await subcategoryFolder.file(fileName, blob);
+            exportedItems.push(fileName);
+          } catch (err) {
+            console.error(`Failed to export subcategory spritesheet ${subcategoryName}_${itemToDraw.variant}:`, err);
+            failedItems.push(`${subcategoryName}_${itemToDraw.variant}`);
+          }
+        }
+      }
+
+      const timestamp = newTimeStamp();
+      await downloadZip(zip, `${categoryType}_${timestamp}.zip`);
+
+      // Show success message with any failures
+      if (failedItems.length > 0) {
+        const failureMessage = [];
+        if (failedItems.length > 0) {
+          failureMessage.push(`Failed to export subcategory spritesheets: ${failedItems.join(', ')}`);
+        }
+        alert(`Export completed with some issues:\n${failureMessage.join('\n')}`);
+      } else {
+        alert(`Successfully exported ${exportedItems.length} spritesheets for category: ${categoryType}`);
+      }
+    } catch (error) {
+      console.error('Category export error:', error);
+      alert(`Export failed: ${error.message}\nCheck console for details.`);
+    }
+  });
+
   function clearCustomAnimationPreviews() {
     for (let i = 0; i < addedCustomAnimations.length; ++i) {
       $("#whichAnim")
@@ -1672,6 +1778,47 @@ $(".exportSplitAnimations").click(async function() {
       $(".removeIncompatibleWithLicenses").show();
     } else {
       $(".removeIncompatibleWithLicenses").hide();
+    }
+
+    // Show/hide category export button based on current selection
+    const selectedItems = $("#chooser input[type=radio]:checked");
+    let shouldShowCategoryExport = false;
+    
+    if (selectedItems.length > 0) {
+      // Check if all selected items belong to the same category (type_name)
+      const firstSelected = selectedItems.first();
+      const categoryType = firstSelected.attr("name");
+      
+      if (categoryType) {
+        // Count how many items of this category are selected
+        const sameCategoryItems = selectedItems.filter(`[name="${categoryType}"]`);
+        
+        // Show button if we have items from this category selected
+        // and it's a top-level category (not a specific variant selection)
+        if (sameCategoryItems.length > 0) {
+          // Check if we're looking at a top-level category by seeing if there are multiple subcategories
+          const allCategoryItems = $(`#chooser input[type=radio][name="${categoryType}"]`);
+          const uniqueSubcategories = new Set();
+          
+          allCategoryItems.each(function() {
+            const parentName = $(this).attr("parentName");
+            if (parentName) {
+              uniqueSubcategories.add(parentName);
+            }
+          });
+          
+          // If there are multiple subcategories, this is a top-level category
+          if (uniqueSubcategories.size > 1) {
+            shouldShowCategoryExport = true;
+          }
+        }
+      }
+    }
+    
+    if (shouldShowCategoryExport) {
+      $(".exportCategorySpritesheets").show();
+    } else {
+      $(".exportCategorySpritesheets").hide();
     }
 
     if (promises.length > 0) {
