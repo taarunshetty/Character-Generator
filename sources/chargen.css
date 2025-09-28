@@ -398,31 +398,52 @@ a {
   border: 0;
 }
 
+/* === START: NEW CATEGORY EXPORT STYLES === */
 
-#category-export-section {
-  margin: 15px 0;
-  padding: 15px;
-  border: 1px solid #ddd;
-  border-radius: 5px;
+#category-export-container {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 5px;
+  max-height: 250px;
+  overflow-y: auto;
   background-color: #f9f9f9;
 }
 
-#category-checkboxes {
-  margin: 10px 0;
-  max-height: 150px;
-  overflow-y: auto;
-  border: 1px solid #ccc;
-  padding: 10px;
-  background-color: white;
+.export-category-group summary {
+  display: block;
+  cursor: pointer;
+  padding: 5px;
+  background-color: #eee;
+  border-radius: 3px;
+  margin-bottom: 5px;
 }
 
-#category-checkboxes label {
+.export-category-group summary:hover {
+  background-color: #ddd;
+}
+
+.export-category-group .master-checkbox {
+  margin-right: 10px;
+  vertical-align: middle;
+}
+
+.export-category-group .subcategory-list {
+  padding-left: 20px;
+  border-left: 2px solid #eee;
+  margin-left: 8px; /* Aligns with master checkbox */
+}
+
+.export-category-group .subcategory-list label {
   display: block;
-  margin: 5px 0;
+  padding: 3px 0;
   cursor: pointer;
 }
 
-#category-checkboxes input[type="checkbox"] {
+.export-category-group .subcategory-list label:hover {
+  background-color: #f0f0f0;
+}
+
+.export-category-group .subcategory-list input[type="checkbox"] {
   margin-right: 8px;
 }
 
@@ -430,3 +451,5 @@ a {
   background-color: #ccc;
   cursor: not-allowed;
 }
+
+/* === END: NEW CATEGORY EXPORT STYLES === */
