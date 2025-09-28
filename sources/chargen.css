@@ -397,3 +397,36 @@ label[for="displayMode-compact"] {
 a {
   border: 0;
 }
+
+
+#category-export-section {
+  margin: 15px 0;
+  padding: 15px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  background-color: #f9f9f9;
+}
+
+#category-checkboxes {
+  margin: 10px 0;
+  max-height: 150px;
+  overflow-y: auto;
+  border: 1px solid #ccc;
+  padding: 10px;
+  background-color: white;
+}
+
+#category-checkboxes label {
+  display: block;
+  margin: 5px 0;
+  cursor: pointer;
+}
+
+#category-checkboxes input[type="checkbox"] {
+  margin-right: 8px;
+}
+
+.exportCategorySpritesheets:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
