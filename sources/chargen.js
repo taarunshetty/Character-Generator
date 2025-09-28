@@ -1992,52 +1992,87 @@ $(document).ready(function () {
     }
   }
 
-  // Function to populate category checkboxes
+  // ** START: NEW CATEGORY EXPORT UI FUNCTIONS **
+
+  // Rebuilds the category export UI to mirror the main chooser's hierarchy
   function populateCategoryCheckboxes() {
-    const categories = new Set();
+    const exportContainer = $("#category-export-container");
+    exportContainer.empty();
 
-    // Find all radio buttons and extract unique category names
-    $("#chooser input[type=radio]").each(function () {
-      const categoryType = $(this).attr("name");
-      if (categoryType && categoryType !== "sex" && categoryType !== "animation") {
-        categories.add(categoryType);
-      }
+    // Find top-level categories from the main chooser
+    $("#chooser > details > ul > li").each(function() {
+        const mainCatLi = $(this);
+        const mainCatName = mainCatLi.children("span").first().text().trim();
+
+        if (!mainCatName) return;
+
+        const details = $("<details class='export-category-group'></details>");
+        const summary = $("<summary></summary>");
+        const masterCheckbox = $('<input type="checkbox" class="master-checkbox">');
+        
+        summary.append(masterCheckbox).append(`<strong>${mainCatName}</strong>`);
+        details.append(summary);
+
+        const subContainer = $('<div class="subcategory-list"></div>');
+
+        // Find subcategories within this main category
+        mainCatLi.find("ul > li.variant-list").each(function() {
+            const subCatLi = $(this);
+            const subCatName = subCatLi.children("span").first().text().trim();
+            const radioName = subCatLi.find("input[type=radio]").first().attr("name");
+
+            if (radioName && subCatName) {
+                const label = $("<label></label>");
+                const checkbox = $(`<input type="checkbox" class="subcategory-checkbox" value="${radioName}">`);
+                label.append(checkbox).append(` ${subCatName}`);
+                subContainer.append(label);
+            }
+        });
+
+        if (subContainer.children().length > 0) {
+            details.append(subContainer);
+            exportContainer.append(details);
+        }
     });
-
-    const checkboxContainer = $("#category-checkboxes");
-    checkboxContainer.empty();
-
-    // Create checkbox for each category
-    Array.from(categories).sort().forEach(category => {
-      const checkboxId = `category-${category}`;
-      const label = category.charAt(0).toUpperCase() + category.slice(1).replace(/_/g, ' ');
-
-      checkboxContainer.append(`
-        <label for="${checkboxId}">
-          <input type="checkbox" id="${checkboxId}" value="${category}">
-          ${label}
-        </label>
-      `);
+    
+    // Add event listeners for new UI
+    // Master checkbox controls its children
+    exportContainer.on("change", ".master-checkbox", function() {
+        const $master = $(this);
+        const isChecked = $master.is(":checked");
+        $master.closest("details").find(".subcategory-checkbox").prop("checked", isChecked).trigger("change");
     });
+    
+    // Sub-checkboxes update their master
+    exportContainer.on("change", ".subcategory-checkbox", function() {
+        const $details = $(this).closest("details");
+        const $subCheckboxes = $details.find(".subcategory-checkbox");
+        const $masterCheckbox = $details.find(".master-checkbox");
 
-    // Add event listener to enable/disable export button
-    $("#category-checkboxes input[type=checkbox]").on("change", function () {
-      const hasChecked = $("#category-checkboxes input[type=checkbox]:checked").length > 0;
-      $(".exportCategorySpritesheets").prop("disabled", !hasChecked);
+        const allChecked = $subCheckboxes.length === $subCheckboxes.filter(":checked").length;
+        $masterCheckbox.prop("checked", allChecked);
+        
+        // Update main download button state
+        const anyChecked = $("#category-export-container .subcategory-checkbox:checked").length > 0;
+        $(".exportCategorySpritesheets").prop("disabled", !anyChecked);
     });
+    
+    // Initial state of download button
+    $(".exportCategorySpritesheets").prop("disabled", true);
   }
+
 
   // Enhanced category export function
   $(".exportCategorySpritesheets").click(async function () {
     try {
-      // Get selected categories
+      // Get selected categories from the new UI
       const selectedCategories = [];
-      $("#category-checkboxes input[type=checkbox]:checked").each(function () {
+      $("#category-export-container .subcategory-checkbox:checked").each(function () {
         selectedCategories.push($(this).val());
       });
 
       if (selectedCategories.length === 0) {
-        alert("Please select at least one category to export.");
+        alert("Please select at least one subcategory to export.");
         return;
       }
 
@@ -2049,27 +2084,44 @@ $(document).ready(function () {
       let totalFailed = 0;
       const failureDetails = [];
 
-      // Process each selected category
+      // Process each selected category (which is now a subcategory)
       for (const categoryType of selectedCategories) {
         try {
-          console.log(`Processing category: ${categoryType}`);
+          // Find the main category name for folder structure
+          const mainCategoryName = $(`input.subcategory-checkbox[value="${categoryType}"]`)
+                                      .closest("details")
+                                      .find("summary strong")
+                                      .text();
 
-          // Find all items of this category type
+          // Find the subcategory name for folder structure
+          const subCategoryName = $(`input.subcategory-checkbox[value="${categoryType}"]`)
+                                      .parent("label")
+                                      .text()
+                                      .trim();
+
+          console.log(`Processing ${mainCategoryName} -> ${subCategoryName}`);
+
           const categoryItems = $(`#chooser input[type=radio][name="${categoryType}"]`);
           if (categoryItems.length === 0) {
             failureDetails.push(`No items found for category: ${categoryType}`);
             continue;
           }
+
+          // Create folder structure: MainCategory/SubCategory
+          const mainFolder = zip.folder(mainCategoryName);
+          const subFolder = mainFolder.folder(subCategoryName);
+          if (!subFolder) {
+            failureDetails.push(`Failed to create folder for: ${mainCategoryName}/${subCategoryName}`);
+            continue;
+          }
           
-          // Group items by subcategory (parentName)
-          const subcategories = {};
+          let itemsToProcess = [];
           categoryItems.each(function () {
             const $item = $(this);
             const parentName = $item.attr("parentName");
             const variant = $item.attr("variant");
 
             if (!parentName || !variant) return;
-            if (!subcategories[parentName]) subcategories[parentName] = [];
             
             const $liVariant = $item.closest("li.variant-list");
             const fileName = $item.data(`layer_1_${bodyType}`) || $liVariant.data(`layer_1_${bodyType}`) || "";
@@ -2077,57 +2129,40 @@ $(document).ready(function () {
 
             const supportedAnimations = $item.closest("[data-animations]").data("animations") || "";
 
-            const itemData = {
+            itemsToProcess.push({
               fileName: fileName,
               zPos: parseInt($item.data("layer_1_zpos"), 10) || 0,
               parentName: parentName,
               name: parentName,
               variant: variant,
               supportedAnimations: supportedAnimations
-            };
-            subcategories[parentName].push(itemData);
+            });
           });
 
-          // Process each subcategory
-          for (const [subcategoryName, items] of Object.entries(subcategories)) {
-            if (items.length === 0) continue;
-
-            const subcategoryFolder = categoryFolder.folder(subcategoryName);
-            if (!subcategoryFolder) {
-              console.error(`Failed to create subcategory folder: ${subcategoryName}`);
-              totalFailed += items.length;
-              failureDetails.push(`${categoryType}: Could not create folder for ${subcategoryName}`);
-              continue;
-            }
-
-            // Process each variant in the subcategory
-            for (const itemToDraw of items) {
+          for (const itemToDraw of itemsToProcess) {
               try {
                 const itemCanvas = document.createElement("canvas");
-                // Set canvas size to the universal spritesheet dimensions
                 itemCanvas.width = universalSheetWidth;
                 itemCanvas.height = universalSheetHeight;
                 
-                // Await the fully asynchronous drawing function
                 await drawItemSheet(itemCanvas, itemToDraw, addedCustomAnimations || []);
 
                 const blob = await canvasToBlob(itemCanvas);
-                const fileName = `${subcategoryName}_${itemToDraw.variant}.png`;
+                const pngFileName = `${itemToDraw.variant}.png`;
                 
                 if (blob) {
-                  subcategoryFolder.file(fileName, blob);
+                  subFolder.file(pngFileName, blob);
                   totalExported++;
                 } else {
                   totalFailed++;
-                  failureDetails.push(`${categoryType}: Failed to create blob for ${itemToDraw.variant}`);
+                  failureDetails.push(`${subCategoryName}: Failed to create blob for ${itemToDraw.variant}`);
                 }
               } catch (err) {
                 totalFailed++;
-                failureDetails.push(`${categoryType}: Error exporting ${itemToDraw.variant}: ${err.message}`);
-                console.error(`Failed to export ${subcategoryName}_${itemToDraw.variant}:`, err);
+                failureDetails.push(`${subCategoryName}: Error exporting ${itemToDraw.variant}: ${err.message}`);
+                console.error(`Failed to export ${subCategoryName}_${itemToDraw.variant}:`, err);
               }
             }
-          }
         } catch (err) {
           totalFailed++;
           failureDetails.push(`Critical error processing category ${categoryType}: ${err.message}`);
@@ -2163,6 +2198,8 @@ $(document).ready(function () {
       alert(`Export failed: ${error.message}`);
     }
   });
+  
+  // ** END: NEW CATEGORY EXPORT UI FUNCTIONS **
 
   // Call this function when the page loads after the initial UI setup is complete.
   populateCategoryCheckboxes();
