@@ -1,5 +1,4 @@
 /**
-
  * @typedef {{
     fileName:string,
     zPos: number,
@@ -8,16 +7,16 @@
     name: string,
     variant: string,
     supportedAnimations: string
-  }} ItemToDraw
+}} ItemToDraw
 
  * @typedef {{
-      bodyTypeName: string,
-      url: string,
-      spritesheets: string,
-      version: number,
-      datetime: string,
-      credits: string[],
-  }} ItemsMeta
+     bodyTypeName: string,
+     url: string,
+     spritesheets: string,
+     version: number,
+     datetime: string,
+     credits: string[],
+ }} ItemsMeta
  */
 
 $.expr[":"].icontains = function (a, i, m) {
@@ -63,7 +62,7 @@ const DEBUG = debugQueryString() ?? isLocalhost;
 
 $(document).ready(function () {
   let matchBodyColor = true;
-  
+
   /** @type {ItemToDraw[]} */
   let itemsToDraw = [];
 
@@ -101,23 +100,23 @@ $(document).ready(function () {
     backslash: 46 * universalFrameSize,
     halfslash: 50 * universalFrameSize,
   };
-  
+
   const animationFrameCounts = {
-	spellcast: 7,
-	thrust: 8,
-	walk: 9,
-	slash: 6,
-	shoot: 13,
-	hurt: 6,
-	climb: 6,
-	idle: 2,
-	jump: 5,
-	sit: 3,
-	emote: 3,
-	run: 8,
-	combat_idle: 2,
-	backslash: 13,
-	halfslash: 7
+    spellcast: 7,
+    thrust: 8,
+    walk: 9,
+    slash: 6,
+    shoot: 13,
+    hurt: 6,
+    climb: 6,
+    idle: 2,
+    jump: 5,
+    sit: 3,
+    emote: 3,
+    run: 8,
+    combat_idle: 2,
+    backslash: 13,
+    halfslash: 7
   };
 
   const sexes = ["male", "female", "teen", "child", "muscular", "pregnant"];
@@ -139,6 +138,36 @@ $(document).ready(function () {
   let currentAnimationItemIndex = 0;
   let activeCustomAnimation = "";
   let addedCustomAnimations = [];
+
+  // Global variables for custom animations (added for compatibility)
+  const customAnimations = {};
+  const animationRowsLayout = {};
+
+  // Missing function stubs for category export
+  function drawFrameToFrame(destCtx, destPos, destSize, src, srcPos, srcSize) {
+    destCtx.drawImage(src,
+      srcPos.x, srcPos.y, srcSize, srcSize,
+      destPos.x, destPos.y, destSize, destSize);
+  }
+
+  function customAnimationSize(customAnim) {
+    if (!customAnim || !customAnim.frameSize || !customAnim.frames) {
+      return { width: universalFrameSize, height: universalFrameSize };
+    }
+    const frameSize = customAnim.frameSize;
+    const width = customAnim.frames[0] ? customAnim.frames[0].length * frameSize : frameSize;
+    const height = customAnim.frames.length * frameSize;
+    return { width, height };
+  }
+
+  function customAnimationBase(customAnim) {
+    return customAnim && customAnim.base ? customAnim.base : "walk";
+  }
+
+  function isCustomAnimationBasedOnStandardAnimation(customAnim, standardAnim) {
+    const base = customAnimationBase(customAnim);
+    return base === standardAnim;
+  }
 
   // on hash (url) change event, interpret and redraw
   jHash.change(function () {
@@ -482,12 +511,12 @@ $(document).ready(function () {
     }
     $("#frame-cycle").text(animationItems.join("-"));
   });
-  
+
   function newZip() {
     const zip = new JSZip();
 
     const creditsFolder = zip.folder("credits");
-    
+
     if (!creditsFolder) {
       throw new Error("Failed to create folder structure in zip file");
     }
@@ -547,148 +576,108 @@ $(document).ready(function () {
     });
   };
 
-const newTimeStamp = () => new Date().toISOString().replace(/[:\.]/g, '-').substring(0, 19);
+  const newTimeStamp = () => new Date().toISOString().replace(/[:\.]/g, '-').substring(0, 19);
 
-const addMetadataToZip = (zip, bodyType, timestamp, exportedStandard, failedStandard, exportedCustom, failedCustom) => {
-  const metadata = {
-    exportTimestamp: timestamp,
-    bodyType: bodyType,
-    standardAnimations: {
-      exported: exportedStandard,
-      failed: failedStandard
-    },
-    customAnimations: {
-      exported: exportedCustom,
-      failed: failedCustom
-    },
-    frameSize: universalFrameSize,
-    frameCounts: animationFrameCounts
-  };
-  try {
-    const creditsFolder = zip.folder("credits");
-    creditsFolder.file("metadata.json", JSON.stringify(metadata, null, 2));
-  } catch (err) {
-    throw new Error(`Failed to add metadata.json: ${err.message}`);
-  }
-  return metadata;
-}
-
-  /**
-   * 
-   * @param {string} custom_animation 
-   * @param {string[]} addedCustomAnimations 
-   * @returns 
-   */
-  function customAnimationY(custom_animation, addedCustomAnimations) {
-    let y = universalSheetHeight;
-    for (const custAnimName of addedCustomAnimations) {
-      if (custAnimName === custom_animation)
-        break;
-      const otherCustomAction = customAnimations[custAnimName];
-      y += customAnimationSize(otherCustomAction).height;
+  const addMetadataToZip = (zip, bodyType, timestamp, exportedStandard, failedStandard, exportedCustom, failedCustom) => {
+    const metadata = {
+      exportTimestamp: timestamp,
+      bodyType: bodyType,
+      standardAnimations: {
+        exported: exportedStandard,
+        failed: failedStandard
+      },
+      customAnimations: {
+        exported: exportedCustom,
+        failed: failedCustom
+      },
+      frameSize: universalFrameSize,
+      frameCounts: animationFrameCounts
+    };
+    try {
+      const creditsFolder = zip.folder("credits");
+      creditsFolder.file("metadata.json", JSON.stringify(metadata, null, 2));
+    } catch (err) {
+      throw new Error(`Failed to add metadata.json: ${err.message}`);
     }
-    return y;
+    return metadata;
   }
 
   /**
-   * 
-   * @param {CanvasRenderingContext2D} destCtx 
-   * @param {CanvasImageSource} baseCanvas
-   * @param {ItemToDraw} itemToDraw 
-   * @param {number} requiredCanvasWidth 
-   * @param {number} requiredCanvasHeight 
-   * @param {string?} didPutUniversalForCustomAnimation 
-   * @returns 
+   * Asynchronously draws a single item's complete spritesheet to a destination canvas.
+   * It loads all required animation images on-demand.
+   * @param {HTMLCanvasElement} destCanvas The canvas to draw on.
+   * @param {ItemToDraw} itemToDraw The item to be drawn.
+   * @param {string[]} addedCustomAnimations A list of custom animations.
    */
-  function drawCustomAnimationItem(destCtx, itemToDraw, addedCustomAnimations) {
-    const custom_animation = itemToDraw.custom_animation;
-    const filePath = itemToDraw.fileName;
-    const img = loadImage(filePath, false);
-    const y = customAnimationY(custom_animation, addedCustomAnimations);
-    destCtx.drawImage(img, 0, y);
-  }
-
-  /**
-   * 
-   * @param {CanvasImageSource} src 
-   * @param {{x: number?, y: number?, width: number, height: number}?} srcRect
-   */
-  function newAnimationFromSheet(src, srcRect) {
-    const { x, y, width, height } = srcRect || { width: src.width, height: src.height };
-    const fromSubregion = x !== undefined && y !== undefined;
-    if (fromSubregion) {
-      if (!hasContentInRegion(src.getContext("2d"), x, y, width, height))
-        return null;
-    }
-
-    const animCanvas = document.createElement('canvas');
-    animCanvas.width = width;
-    animCanvas.height = height;
-    const animCtx = animCanvas.getContext('2d');
-
-    if (!animCtx) {
-      throw new Error("Failed to get canvas context");
-    }
-
-    if (fromSubregion) {
-      animCtx.drawImage(src,
-        x, y, width, height,
-        0, 0, width, height);
-    } else {
-      animCtx.drawImage(src, 0, 0);
-    }
-
-    return animCanvas;
-  }
-
-  function newStandardAnimationForCustomAnimation(src, custAnim) {
-    const custCanvas = document.createElement("canvas");
-    const {width: custWidth, height: custHeight} = customAnimationSize(custAnim);
-    custCanvas.width = custWidth;
-    custCanvas.height = custHeight;
-    const custCtx = custCanvas.getContext("2d");
-    drawFramesToCustomAnimation(custCtx, custAnim, 0, src, null);
-    return custCanvas;
-  }
-
-  async function addStandardAnimationToZipCustomFolder(custAnimFolder, itemFileName, src, custAnim) {
-    const custCanvas = newStandardAnimationForCustomAnimation(src, custAnim);
-    const custBlob = await canvasToBlob(custCanvas);
-    custAnimFolder.file(itemFileName, custBlob);
-    return custCanvas;
-  }
-
-  /**
-   * 
-   * @param {HTMLCanvasElement} destCanvas 
-   * @param {ItemToDraw} itemToDraw 
-   * @param {string[]} addedCustomAnimations 
-   */
-  function drawItemSheet(destCanvas, itemToDraw, addedCustomAnimations) {
+  async function drawItemSheet(destCanvas, itemToDraw, addedCustomAnimations) {
     const destCtx = destCanvas.getContext("2d");
+    if (!destCtx) return;
+
+    // This function now handles loading images asynchronously.
+    const loadImageAsync = (src) => {
+        return new Promise((resolve, reject) => {
+            // Check cache first
+            if (images[src] && images[src].complete) {
+                resolve(images[src]);
+                return;
+            }
+            if (images[src]) { // Image is loading, listen for it to finish
+                images[src].onload = () => resolve(images[src]);
+                images[src].onerror = (err) => reject(err);
+                return;
+            }
+            // Not in cache, create and load it
+            const img = new Image();
+            img.onload = () => {
+                images[src] = img; // Add to cache on success
+                resolve(img);
+            };
+            img.onerror = () => {
+                images[src] = null; // Cache failure
+                reject(new Error(`Failed to load image: ${src}`));
+            };
+            img.src = "spritesheets/" + src;
+        });
+    };
+    
     const custom_animation = itemToDraw.custom_animation;
     if (custom_animation !== undefined) {
-      drawCustomAnimationItem(destCtx, itemToDraw, addedCustomAnimations);
-    } else {
-      for (const [key, value] of Object.entries(base_animations)) {
-        if (!drawItemOnStandardAnimation(destCtx, value, key, itemToDraw))
-          continue;
-
-        let offSetY = universalSheetHeight;
-        for (const custAnimName of addedCustomAnimations) {
-          const custAnim = customAnimations[custAnimName];
-          if (key === customAnimationBase(custAnim)) {
-            drawFramesToCustomAnimation(destCtx, custAnim, offSetY, destCanvas, animationRowsLayout);
-          }
-          offSetY += customAnimationSize(custAnim).height;
+        try {
+            const img = await loadImageAsync(itemToDraw.fileName);
+            // This part for custom animations might need more logic if they are not single files
+            // For now, assuming they are drawn at y=0 or based on a different logic.
+            // The original logic is preserved here:
+            const y = customAnimationY(custom_animation, addedCustomAnimations);
+            destCtx.drawImage(img, 0, y);
+        } catch (error) {
+            console.warn(`Could not draw custom animation for ${itemToDraw.fileName}:`, error);
         }
-      }
+    } else {
+        // This loop builds the standard spritesheet from its animation parts
+        for (const [animName, yOffset] of Object.entries(base_animations)) {
+            let animationToCheck = animName;
+            if (animName === "combat_idle") animationToCheck = "combat";
+            if (animName === "backslash") animationToCheck = "1h_slash";
+            if (animName === "halfslash") animationToCheck = "1h_halfslash";
+            
+            if (itemToDraw.supportedAnimations.includes(animationToCheck)) {
+                const { directory, file } = splitFilePath(itemToDraw.fileName);
+                const imagePath = `${directory}/${animName}/${file}`;
+                try {
+                    const img = await loadImageAsync(imagePath);
+                    if (img) {
+                        destCtx.drawImage(img, 0, yOffset);
+                    }
+                } catch (error) {
+                    if (DEBUG) console.warn(`Skipping animation "${animName}" for ${file}:`, error.message);
+                }
+            }
+        }
     }
   }
 
   /**
-   * 
-   * @param {*} folder 
+   * * @param {*} folder 
    * @param {string} fileName 
    * @param {CanvasImageSource} src 
    * @param {{x: number?, y: number?, width: number, height: number}?} srcRect 
@@ -702,94 +691,94 @@ const addMetadataToZip = (zip, bodyType, timestamp, exportedStandard, failedStan
     return animCanvas;
   }
 
-$(".exportSplitAnimations").click(async function() {
-  try {
-    const zip = newZip();
-    const bodyType = getBodyTypeName();
-    const timestamp = newTimeStamp()
+  $(".exportSplitAnimations").click(async function () {
+    try {
+      const zip = newZip();
+      const bodyType = getBodyTypeName();
+      const timestamp = newTimeStamp()
 
-    // Create folders in zip
-    const standardFolder = zip.folder("standard");
-    const customFolder = zip.folder("custom");
-    const creditsFolder = zip.folder("credits");
+      // Create folders in zip
+      const standardFolder = zip.folder("standard");
+      const customFolder = zip.folder("custom");
+      const creditsFolder = zip.folder("credits");
 
-    if (!standardFolder || !customFolder || !creditsFolder) {
-      throw new Error("Failed to create folder structure in zip file");
-    }
-
-    // Export standard animations
-    const exportedStandard = [];
-    const failedStandard = [];
-
-    for (const [name, y] of Object.entries(base_animations)) {
-      try {
-        const rows = name === 'hurt' || name === 'climb' ? 1 : 4;
-        const frames = animationFrameCounts[name];
-        const srcRect = {
-          x: 0, y,
-          width: frames * universalFrameSize,
-          height: rows * universalFrameSize
-        };
-        const animCanvas = await addAnimationToZipFolder(standardFolder, `${name}.png`,
-          canvas, srcRect);
-
-        if (animCanvas)
-          exportedStandard.push(name);
-      } catch (err) {
-        console.error(`Failed to export standard animation ${name}:`, err);
-        failedStandard.push(name);
+      if (!standardFolder || !customFolder || !creditsFolder) {
+        throw new Error("Failed to create folder structure in zip file");
       }
-    }
 
-    // Handle custom animations
-    const exportedCustom = [];
-    const failedCustom = [];
-    let y = universalSheetHeight;
+      // Export standard animations
+      const exportedStandard = [];
+      const failedStandard = [];
 
-    for (const animName of addedCustomAnimations) {
-      try {
-        const anim = customAnimations[animName];
-        if (!anim) {
-          throw new Error("Animation definition not found");
+      for (const [name, y] of Object.entries(base_animations)) {
+        try {
+          const rows = name === 'hurt' || name === 'climb' ? 1 : 4;
+          const frames = animationFrameCounts[name];
+          const srcRect = {
+            x: 0, y,
+            width: frames * universalFrameSize,
+            height: rows * universalFrameSize
+          };
+          const animCanvas = await addAnimationToZipFolder(standardFolder, `${name}.png`,
+            canvas, srcRect);
+
+          if (animCanvas)
+            exportedStandard.push(name);
+        } catch (err) {
+          console.error(`Failed to export standard animation ${name}:`, err);
+          failedStandard.push(name);
         }
-
-        const srcRect = { x: 0, y, ...customAnimationSize(anim) };
-        const animCanvas = await addAnimationToZipFolder(customFolder, `${animName}.png`,
-          canvas, srcRect);
-
-        if (animCanvas)
-          exportedCustom.push(animName);
-
-        y += srcRect.height;
-      } catch (err) {
-        console.error(`Failed to export custom animation ${animName}:`, err);
-        failedCustom.push(animName);
       }
+
+      // Handle custom animations
+      const exportedCustom = [];
+      const failedCustom = [];
+      let y = universalSheetHeight;
+
+      for (const animName of addedCustomAnimations) {
+        try {
+          const anim = customAnimations[animName];
+          if (!anim) {
+            throw new Error("Animation definition not found");
+          }
+
+          const srcRect = { x: 0, y, ...customAnimationSize(anim) };
+          const animCanvas = await addAnimationToZipFolder(customFolder, `${animName}.png`,
+            canvas, srcRect);
+
+          if (animCanvas)
+            exportedCustom.push(animName);
+
+          y += srcRect.height;
+        } catch (err) {
+          console.error(`Failed to export custom animation ${animName}:`, err);
+          failedCustom.push(animName);
+        }
+      }
+
+      // Add metadata about the export
+      addMetadataToZip(zip, bodyType, timestamp, exportedStandard, failedStandard, exportedCustom, failedCustom);
+
+      // Generate and download zip
+      await downloadZip(zip, `lpc_${bodyType}_animations_${timestamp}.zip`);
+
+      // Show success message with any failures
+      if (failedStandard.length > 0 || failedCustom.length > 0) {
+        const failureMessage = [];
+        if (failedStandard.length > 0) {
+          failureMessage.push(`Failed to export standard animations: ${failedStandard.join(', ')}`);
+        }
+        if (failedCustom.length > 0) {
+          failureMessage.push(`Failed to export custom animations: ${failedCustom.join(', ')}`);
+        }
+        alert(`Export completed with some issues:\n${failureMessage.join('\n')}`);
+      }
+
+    } catch (error) {
+      console.error('Export error:', error);
+      alert(`Export failed: ${error.message}\nCheck console for details.`);
     }
-
-    // Add metadata about the export
-    addMetadataToZip(zip, bodyType, timestamp, exportedStandard, failedStandard, exportedCustom, failedCustom);
-
-    // Generate and download zip
-    await downloadZip(zip, `lpc_${bodyType}_animations_${timestamp}.zip`);
-
-    // Show success message with any failures
-    if (failedStandard.length > 0 || failedCustom.length > 0) {
-      const failureMessage = [];
-      if (failedStandard.length > 0) {
-        failureMessage.push(`Failed to export standard animations: ${failedStandard.join(', ')}`);
-      }
-      if (failedCustom.length > 0) {
-        failureMessage.push(`Failed to export custom animations: ${failedCustom.join(', ')}`);
-      }
-      alert(`Export completed with some issues:\n${failureMessage.join('\n')}`);
-    }
-
-  } catch (error) {
-    console.error('Export error:', error);
-    alert(`Export failed: ${error.message}\nCheck console for details.`);
-  }
-});
+  });
 
   const getItemFileName = (item) =>
     `${item.zPos}`.padStart(3, '0') + ` ${item.fileName.replace(/\//g, ' ')}`;
@@ -819,7 +808,7 @@ $(".exportSplitAnimations").click(async function() {
     }
   }
 
-  $(".exportSplitItemAnimations").click(async function() {
+  $(".exportSplitItemAnimations").click(async function () {
     try {
       const zip = newZip();
       const bodyType = getBodyTypeName();
@@ -840,7 +829,7 @@ $(".exportSplitAnimations").click(async function() {
       const failedStandard = {};
       const exportedCustom = {};
       const failedCustom = {};
-      
+
       for (const name of Object.keys(base_animations)) {
         const animFolder = standardFolder.folder(name);
         const exportedItems = [];
@@ -953,17 +942,15 @@ $(".exportSplitAnimations").click(async function() {
       const exportedItems = [];
       const failedItems = [];
 
-      const itemCanvas = document.createElement("canvas");
-      itemCanvas.width = canvas.width;
-      itemCanvas.height = canvas.height;
-      const itemCtx = itemCanvas.getContext("2d");
-
       for (let itemToDraw of itemsToDraw) {
         const fileName = getItemFileName(itemToDraw);
-
         try {
+          const itemCanvas = document.createElement("canvas");
+          itemCanvas.width = canvas.width;
+          itemCanvas.height = canvas.height;
+          const itemCtx = itemCanvas.getContext("2d");
           itemCtx.clearRect(0, 0, itemCanvas.width, itemCanvas.height);
-          drawItemSheet(itemCanvas, itemToDraw, addedCustomAnimations);
+          await drawItemSheet(itemCanvas, itemToDraw, addedCustomAnimations);
 
           const blob = await canvasToBlob(itemCanvas);
           await itemsFolder.file(fileName, blob);
@@ -988,112 +975,6 @@ $(".exportSplitAnimations").click(async function() {
       }
     } catch (error) {
       console.error('Export error:', error);
-      alert(`Export failed: ${error.message}\nCheck console for details.`);
-    }
-  });
-
-  $(".exportCategorySpritesheets").click(async () => {
-    try {
-      // Get currently selected category from the first selected item
-      const selectedItems = $("#chooser input[type=radio]:checked");
-      if (selectedItems.length === 0) {
-        alert("Please select a category first.");
-        return;
-      }
-
-      // Get the type_name from the first selected item
-      const firstSelected = selectedItems.first();
-      const categoryType = firstSelected.attr("name");
-      
-      if (!categoryType) {
-        alert("Unable to determine category type.");
-        return;
-      }
-
-      // Find all items of this category type
-      const categoryItems = $("#chooser input[type=radio][name='" + categoryType + "']");
-      if (categoryItems.length === 0) {
-        alert("No items found for this category.");
-        return;
-      }
-
-      const zip = newZip();
-      const bodyType = getBodyTypeName();
-      
-      // Create folder structure: Category/Subcategory/
-      const categoryFolder = zip.folder(categoryType);
-      if (!categoryFolder) {
-        throw new Error("Failed to create category folder in zip file");
-      }
-
-      const exportedItems = [];
-      const failedItems = [];
-
-      const itemCanvas = document.createElement("canvas");
-      itemCanvas.width = canvas.width;
-      itemCanvas.height = canvas.height;
-      const itemCtx = itemCanvas.getContext("2d");
-
-      // Group items by subcategory (parentName)
-      const subcategories = {};
-      categoryItems.each(function() {
-        const $item = $(this);
-        const parentName = $item.attr("parentName");
-        const variant = $item.attr("variant");
-        
-        if (!subcategories[parentName]) {
-          subcategories[parentName] = [];
-        }
-        
-        // Create item data similar to itemsToDraw structure
-        const itemData = {
-          fileName: $item.data(`layer_1_${bodyType}`) || "",
-          zPos: $item.data("layer_1_zpos") || 0,
-          parentName: parentName,
-          name: parentName,
-          variant: variant,
-          supportedAnimations: "spellcast,thrust,walk,slash,shoot,hurt,watering,idle,jump,run,sit,emote,climb,combat"
-        };
-        
-        subcategories[parentName].push(itemData);
-      });
-
-      // Process each subcategory
-      for (const [subcategoryName, items] of Object.entries(subcategories)) {
-        const subcategoryFolder = categoryFolder.folder(subcategoryName);
-        
-        // Process each variant in the subcategory
-        for (const itemToDraw of items) {
-          try {
-            itemCtx.clearRect(0, 0, itemCanvas.width, itemCanvas.height);
-            drawItemSheet(itemCanvas, itemToDraw, addedCustomAnimations);
-
-            const fileName = `${subcategoryName}_${itemToDraw.variant}.png`;
-            const blob = await canvasToBlob(itemCanvas);
-            await subcategoryFolder.file(fileName, blob);
-            exportedItems.push(fileName);
-          } catch (err) {
-            console.error(`Failed to export subcategory spritesheet ${subcategoryName}_${itemToDraw.variant}:`, err);
-            failedItems.push(`${subcategoryName}_${itemToDraw.variant}`);
-          }
-        }
-      }
-
-      const timestamp = newTimeStamp();
-      await downloadZip(zip, `${categoryType}_${timestamp}.zip`);
-
-      // Show success message with any failures
-      if (failedItems.length > 0) {
-        const failureMessage = [];
-        if (failedItems.length > 0) {
-          failureMessage.push(`Failed to export subcategory spritesheets: ${failedItems.join(', ')}`);
-        }
-        alert(`Export completed with some issues:\n${failureMessage.join('\n')}`);
-      } else {
-        alert(`Successfully exported ${exportedItems.length} spritesheets for category: ${categoryType}`);
-      }
-    } catch (error) {
-      console.error('Category export error:', error);
       alert(`Export failed: ${error.message}\nCheck console for details.`);
     }
   });
@@ -1391,7 +1272,7 @@ $(".exportSplitAnimations").click(async function() {
         const entries = keys.map(key => {
           const id = `${key}-${jHash.val(key)}`;
           let parent = 'none';
-          if(document.getElementById(id)) {
+          if (document.getElementById(id)) {
             parent = getParent(id);
           }
           return [key, parsedReplacements[key][parent]];
@@ -1451,8 +1332,7 @@ $(".exportSplitAnimations").click(async function() {
   }
 
   /**
-   * 
-   * @param {CanvasRenderingContext2D} customAnimationContext 
+   * * @param {CanvasRenderingContext2D} customAnimationContext 
    * @param {CustomAnimationDefinition} customAnimationDefinition 
    * @param {number} offSetY 
    * @param {CanvasImageSource} src 
@@ -1513,8 +1393,7 @@ $(".exportSplitAnimations").click(async function() {
   }
 
   /**
-   * 
-   * @param {ItemToDraw[]} items 
+   * * @param {ItemToDraw[]} items 
    * @returns {string[]}
    */
   function buildCustomAnimationList(items) {
@@ -1531,24 +1410,23 @@ $(".exportSplitAnimations").click(async function() {
   }
 
   /**
-   * 
-   * @param {string[]} customAnimationList 
+   * * @param {string[]} customAnimationList 
    * @returns {{width:number, height:number}}
    */
   function getTotalSheetSize(customAnimationList) {
     let sheetHeight = universalSheetHeight;
     let sheetWidth = universalSheetWidth;
     for (const customAnimationString of customAnimationList) {
-        const customAnimation = customAnimations[customAnimationString];
-        const {width: customAnimationWidth, height: customAnimationHeight} =
-          customAnimationSize(customAnimation)
-        sheetWidth = Math.max(
-          sheetWidth,
-          customAnimationWidth
-        );
-        sheetHeight = sheetHeight + customAnimationHeight;
+      const customAnimation = customAnimations[customAnimationString];
+      const { width: customAnimationWidth, height: customAnimationHeight } =
+        customAnimationSize(customAnimation)
+      sheetWidth = Math.max(
+        sheetWidth,
+        customAnimationWidth
+      );
+      sheetHeight = sheetHeight + customAnimationHeight;
     }
-    return {width: sheetWidth, height: sheetHeight};
+    return { width: sheetWidth, height: sheetHeight };
   }
 
   function drawItemsToDraw() {
@@ -1560,7 +1438,7 @@ $(".exportSplitAnimations").click(async function() {
 
     clearCustomAnimationPreviews();
     addedCustomAnimations = buildCustomAnimationList(itemsToDraw);
-    const {width, height} = getTotalSheetSize(addedCustomAnimations);
+    const { width, height } = getTotalSheetSize(addedCustomAnimations);
     canvas.width = width;
     canvas.height = height;
 
@@ -1569,7 +1447,30 @@ $(".exportSplitAnimations").click(async function() {
     });
     for (const itemToDraw of itemsToDraw) {
       dynamicReplacements(itemToDraw);
-      drawItemSheet(canvas, itemToDraw, addedCustomAnimations);
+      // The main draw function needs to remain synchronous and use the cache
+      // We will create a new async version for the export
+      const originalDrawItemSheet = (destCanvas, itemToDraw, addedCustomAnimations) => {
+        const destCtx = destCanvas.getContext("2d");
+        const custom_animation = itemToDraw.custom_animation;
+        if (custom_animation !== undefined) {
+            drawCustomAnimationItem(destCtx, itemToDraw, addedCustomAnimations);
+        } else {
+            for (const [key, value] of Object.entries(base_animations)) {
+                if (!drawItemOnStandardAnimation(destCtx, value, key, itemToDraw))
+                    continue;
+
+                let offSetY = universalSheetHeight;
+                for (const custAnimName of addedCustomAnimations) {
+                    const custAnim = customAnimations[custAnimName];
+                    if (key === customAnimationBase(custAnim)) {
+                        drawFramesToCustomAnimation(destCtx, custAnim, offSetY, destCanvas, animationRowsLayout);
+                    }
+                    offSetY += customAnimationSize(custAnim).height;
+                }
+            }
+        }
+      };
+      originalDrawItemSheet(canvas, itemToDraw, addedCustomAnimations);
     }
     addCustomAnimationPreviews();
   }
@@ -1625,8 +1526,8 @@ $(".exportSplitAnimations").click(async function() {
       if (display) {
         // Toggle based on tags/required_tags
         const $firstButton = $this
-        .find("input[type=radio][parentname]")
-        .eq(0);
+          .find("input[type=radio][parentname]")
+          .eq(0);
         if ($firstButton.length > 0) {
           const requiredTags = $this
             .find("input[type=radio]")
@@ -1712,11 +1613,11 @@ $(".exportSplitAnimations").click(async function() {
       }
 
       if (hasExcluded) {
-        $this.find('.excluded-hide').each(function() { $(this).hide().attr('hidden', 'hidden'); });
-        $this.find('.excluded-text').each(function() { $(this).show().attr('hidden', null).text(excludedText); });
+        $this.find('.excluded-hide').each(function () { $(this).hide().attr('hidden', 'hidden'); });
+        $this.find('.excluded-text').each(function () { $(this).show().attr('hidden', null).text(excludedText); });
       } else {
-        $this.find('.excluded-hide').each(function() { $(this).show().attr('hidden', null); });
-        $this.find('.excluded-text').each(function() { $(this).hide().attr('hidden', 'hidden').text(''); });
+        $this.find('.excluded-hide').each(function () { $(this).show().attr('hidden', null); });
+        $this.find('.excluded-text').each(function () { $(this).hide().attr('hidden', 'hidden').text(''); });
       }
     });
 
@@ -1780,46 +1681,8 @@ $(".exportSplitAnimations").click(async function() {
       $(".removeIncompatibleWithLicenses").hide();
     }
 
-    // Show/hide category export button based on current selection
-    const selectedItems = $("#chooser input[type=radio]:checked");
-    let shouldShowCategoryExport = false;
-    
-    if (selectedItems.length > 0) {
-      // Check if all selected items belong to the same category (type_name)
-      const firstSelected = selectedItems.first();
-      const categoryType = firstSelected.attr("name");
-      
-      if (categoryType) {
-        // Count how many items of this category are selected
-        const sameCategoryItems = selectedItems.filter(`[name="${categoryType}"]`);
-        
-        // Show button if we have items from this category selected
-        // and it's a top-level category (not a specific variant selection)
-        if (sameCategoryItems.length > 0) {
-          // Check if we're looking at a top-level category by seeing if there are multiple subcategories
-          const allCategoryItems = $(`#chooser input[type=radio][name="${categoryType}"]`);
-          const uniqueSubcategories = new Set();
-          
-          allCategoryItems.each(function() {
-            const parentName = $(this).attr("parentName");
-            if (parentName) {
-              uniqueSubcategories.add(parentName);
-            }
-          });
-          
-          // If there are multiple subcategories, this is a top-level category
-          if (uniqueSubcategories.size > 1) {
-            shouldShowCategoryExport = true;
-          }
-        }
-      }
-    }
-    
-    if (shouldShowCategoryExport) {
-      $(".exportCategorySpritesheets").show();
-    } else {
-      $(".exportCategorySpritesheets").hide();
-    }
+    // FIXED: Always show category export button (simple visibility)
+    $(".exportCategorySpritesheets").show();
 
     if (promises.length > 0) {
       Promise.allSettled(promises).finally(() => {
@@ -1877,7 +1740,7 @@ $(".exportSplitAnimations").click(async function() {
         imageLoadDone();
       }, 10);
       return images[imgRef];
-    } else if(!(imgRef in images)) {
+    } else if (!(imgRef in images)) {
       imagesToLoad += 1;
       if (DEBUG) console.log(`loading new image ${imgRef}`);
       const img = new Image();
@@ -2128,4 +1991,216 @@ $(".exportSplitAnimations").click(async function() {
       );
     }
   }
+
+  // ** START: NEW CATEGORY EXPORT UI FUNCTIONS **
+
+  // Rebuilds the category export UI to mirror the main chooser's hierarchy
+  function populateCategoryCheckboxes() {
+    const exportContainer = $("#category-export-container");
+    exportContainer.empty();
+
+    // Find top-level categories from the main chooser
+    $("#chooser > details > ul > li").each(function() {
+        const mainCatLi = $(this);
+        const mainCatName = mainCatLi.children("span").first().text().trim();
+
+        if (!mainCatName) return;
+
+        const details = $("<details class='export-category-group'></details>");
+        const summary = $("<summary></summary>");
+        const masterCheckbox = $('<input type="checkbox" class="master-checkbox">');
+        
+        summary.append(masterCheckbox).append(`<strong>${mainCatName}</strong>`);
+        details.append(summary);
+
+        const subContainer = $('<div class="subcategory-list"></div>');
+
+        // Find subcategories within this main category
+        mainCatLi.find("ul > li.variant-list").each(function() {
+            const subCatLi = $(this);
+            const subCatName = subCatLi.children("span").first().text().trim();
+            const radioName = subCatLi.find("input[type=radio]").first().attr("name");
+
+            if (radioName && subCatName) {
+                const label = $("<label></label>");
+                const checkbox = $(`<input type="checkbox" class="subcategory-checkbox" value="${radioName}">`);
+                label.append(checkbox).append(` ${subCatName}`);
+                subContainer.append(label);
+            }
+        });
+
+        if (subContainer.children().length > 0) {
+            details.append(subContainer);
+            exportContainer.append(details);
+        }
+    });
+    
+    // Add event listeners for new UI
+    // Master checkbox controls its children
+    exportContainer.on("change", ".master-checkbox", function() {
+        const $master = $(this);
+        const isChecked = $master.is(":checked");
+        $master.closest("details").find(".subcategory-checkbox").prop("checked", isChecked).trigger("change");
+    });
+    
+    // Sub-checkboxes update their master
+    exportContainer.on("change", ".subcategory-checkbox", function() {
+        const $details = $(this).closest("details");
+        const $subCheckboxes = $details.find(".subcategory-checkbox");
+        const $masterCheckbox = $details.find(".master-checkbox");
+
+        const allChecked = $subCheckboxes.length === $subCheckboxes.filter(":checked").length;
+        $masterCheckbox.prop("checked", allChecked);
+        
+        // Update main download button state
+        const anyChecked = $("#category-export-container .subcategory-checkbox:checked").length > 0;
+        $(".exportCategorySpritesheets").prop("disabled", !anyChecked);
+    });
+    
+    // Initial state of download button
+    $(".exportCategorySpritesheets").prop("disabled", true);
+  }
+
+
+  // Enhanced category export function
+  $(".exportCategorySpritesheets").click(async function () {
+    try {
+      // Get selected categories from the new UI
+      const selectedCategories = [];
+      $("#category-export-container .subcategory-checkbox:checked").each(function () {
+        selectedCategories.push($(this).val());
+      });
+
+      if (selectedCategories.length === 0) {
+        alert("Please select at least one subcategory to export.");
+        return;
+      }
+
+      const zip = new JSZip(); // Use new JSZip() for a clean archive
+      const bodyType = getBodyTypeName();
+      const timestamp = newTimeStamp();
+
+      let totalExported = 0;
+      let totalFailed = 0;
+      const failureDetails = [];
+
+      // Process each selected category (which is now a subcategory)
+      for (const categoryType of selectedCategories) {
+        try {
+          // Find the main category name for folder structure
+          const mainCategoryName = $(`input.subcategory-checkbox[value="${categoryType}"]`)
+                                      .closest("details")
+                                      .find("summary strong")
+                                      .text();
+
+          // Find the subcategory name for folder structure
+          const subCategoryName = $(`input.subcategory-checkbox[value="${categoryType}"]`)
+                                      .parent("label")
+                                      .text()
+                                      .trim();
+
+          console.log(`Processing ${mainCategoryName} -> ${subCategoryName}`);
+
+          const categoryItems = $(`#chooser input[type=radio][name="${categoryType}"]`);
+          if (categoryItems.length === 0) {
+            failureDetails.push(`No items found for category: ${categoryType}`);
+            continue;
+          }
+
+          // Create folder structure: MainCategory/SubCategory
+          const mainFolder = zip.folder(mainCategoryName);
+          const subFolder = mainFolder.folder(subCategoryName);
+          if (!subFolder) {
+            failureDetails.push(`Failed to create folder for: ${mainCategoryName}/${subCategoryName}`);
+            continue;
+          }
+          
+          let itemsToProcess = [];
+          categoryItems.each(function () {
+            const $item = $(this);
+            const parentName = $item.attr("parentName");
+            const variant = $item.attr("variant");
+
+            if (!parentName || !variant) return;
+            
+            const $liVariant = $item.closest("li.variant-list");
+            const fileName = $item.data(`layer_1_${bodyType}`) || $liVariant.data(`layer_1_${bodyType}`) || "";
+            if (!fileName) return;
+
+            const supportedAnimations = $item.closest("[data-animations]").data("animations") || "";
+
+            itemsToProcess.push({
+              fileName: fileName,
+              zPos: parseInt($item.data("layer_1_zpos"), 10) || 0,
+              parentName: parentName,
+              name: parentName,
+              variant: variant,
+              supportedAnimations: supportedAnimations
+            });
+          });
+
+          for (const itemToDraw of itemsToProcess) {
+              try {
+                const itemCanvas = document.createElement("canvas");
+                itemCanvas.width = universalSheetWidth;
+                itemCanvas.height = universalSheetHeight;
+                
+                await drawItemSheet(itemCanvas, itemToDraw, addedCustomAnimations || []);
+
+                const blob = await canvasToBlob(itemCanvas);
+                const pngFileName = `${itemToDraw.variant}.png`;
+                
+                if (blob) {
+                  subFolder.file(pngFileName, blob);
+                  totalExported++;
+                } else {
+                  totalFailed++;
+                  failureDetails.push(`${subCategoryName}: Failed to create blob for ${itemToDraw.variant}`);
+                }
+              } catch (err) {
+                totalFailed++;
+                failureDetails.push(`${subCategoryName}: Error exporting ${itemToDraw.variant}: ${err.message}`);
+                console.error(`Failed to export ${subCategoryName}_${itemToDraw.variant}:`, err);
+              }
+            }
+        } catch (err) {
+          totalFailed++;
+          failureDetails.push(`Critical error processing category ${categoryType}: ${err.message}`);
+          console.error(`Error processing category ${categoryType}:`, err);
+        }
+      }
+
+      // Download the zip file
+      if (totalExported > 0) {
+        const zipFileName = `categories_export_${timestamp}.zip`;
+        await downloadZip(zip, zipFileName);
+      }
+
+      // Show result message
+      let message = `Export completed!\nSuccessfully exported: ${totalExported} spritesheets`;
+
+      if (totalFailed > 0) {
+        message += `\nFailed: ${totalFailed} spritesheets`;
+        if (failureDetails.length > 0) {
+          message += `\n\nDetails:\n${failureDetails.join('\n')}`;
+        }
+      } else if (totalExported === 0) {
+        message = 'No valid items found or rendered for the selected categories.';
+        if (failureDetails.length > 0) {
+           message += `\n\nDetails:\n${failureDetails.join('\n')}`;
+        }
+      }
+
+      alert(message);
+
+    } catch (error) {
+      console.error('Category export error:', error);
+      alert(`Export failed: ${error.message}`);
+    }
+  });
+  
+  // ** END: NEW CATEGORY EXPORT UI FUNCTIONS **
+
+  // Call this function when the page loads after the initial UI setup is complete.
+  populateCategoryCheckboxes();
 });
