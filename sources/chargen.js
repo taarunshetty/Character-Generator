@@ -639,6 +639,9 @@ const custom_animation = itemToDraw.custom_animation;
 if (custom_animation !== undefined) {
    try {
        const img = await loadImageAsync(itemToDraw.fileName);
+       // This part for custom animations might need more logic if they are not single files
+       // For now, assuming they are drawn at y=0 or based on a different logic.
+       // The original logic is preserved here:
        const y = customAnimationY(custom_animation, addedCustomAnimations);
        destCtx.drawImage(img, 0, y);
    } catch (error) {
@@ -2065,25 +2068,25 @@ async function downloadImagesWithConcurrency(urls, limit, onProgress) {
  const urlsToProcess = [...urls];
  let completed = 0;
  
+ const loadImageAsync = (src) => new Promise((resolve, reject) => {
+     const fullSrc = "spritesheets/" + src;
+     if (images[fullSrc] && images[fullSrc].complete) return resolve(images[fullSrc]);
+     if (images[fullSrc]) {
+         images[fullSrc].onload = () => resolve(images[fullSrc]);
+         images[fullSrc].onerror = () => reject(new Error(`Failed to load image: ${src}`));
+         return;
+     }
+     const img = new Image();
+     img.onload = () => { images[fullSrc] = img; resolve(img); };
+     img.onerror = () => { images[fullSrc] = null; reject(new Error(`Failed to load: ${src}`)); };
+     img.src = fullSrc;
+ });
+ 
  const worker = async () => {
      while(urlsToProcess.length > 0) {
          const url = urlsToProcess.pop();
          if (url) {
              try {
-                 // Uses the async loader from drawItemSheetForExportAsync's scope
-                 const loadImageAsync = (src) => new Promise((resolve, reject) => {
-                     const fullSrc = "spritesheets/" + src;
-                     if (images[fullSrc] && images[fullSrc].complete) return resolve(images[fullSrc]);
-                     if (images[fullSrc]) {
-                         images[fullSrc].onload = () => resolve(images[fullSrc]);
-                         images[fullSrc].onerror = (err) => reject(err);
-                         return;
-                     }
-                     const img = new Image();
-                     img.onload = () => { images[fullSrc] = img; resolve(img); };
-                     img.onerror = () => { images[fullSrc] = null; reject(new Error(`Failed to load: ${src}`)); };
-                     img.src = fullSrc;
-                 });
                  await loadImageAsync(url);
              } catch (error) {
                  console.warn(error.message);
@@ -2110,109 +2113,129 @@ const originalButtonText = $button.text();
 $button.prop("disabled", true);
 
 try {
- const selectedSubcategories = [];
- $("#category-export-container .subcategory-checkbox:checked").each(function () {
-   selectedSubcategories.push($(this).val());
- });
-
- if (selectedSubcategories.length === 0) {
-   alert("Please select at least one subcategory to export.");
-   return;
- }
- 
- const bodyType = getBodyTypeName();
- const allItemsToProcess = [];
- const imageUrls = new Set();
- 
- // PHASE 1: Gather all item data and image URLs first
- for (const subCat of selectedSubcategories) {
-   $(`#chooser input[type=radio][name="${subCat}"]`).each(function () {
-     const $item = $(this);
-     const parentName = $item.attr("parentName");
-     const variant = $item.attr("variant");
-     if (!parentName || !variant) return;
-
-     const $liVariant = $item.closest("li.variant-list");
-     const fileName = $item.data(`layer_1_${bodyType}`) || $liVariant.data(`layer_1_${bodyType}`) || "";
-     if (!fileName) return;
-
-     const supportedAnimations = $item.closest("[data-animations]").data("animations") || "";
-     const itemData = { fileName, parentName, variant, supportedAnimations, subCat };
-     allItemsToProcess.push(itemData);
-
-     // Get image URLs for this item
-     for (const animName of Object.keys(base_animations)) {
-       let animCheck = animName;
-       if (animName === "combat_idle") animCheck = "combat";
-       if (animName === "backslash") animCheck = "1h_slash";
-       if (animName === "halfslash") animCheck = "1h_halfslash";
-       if (supportedAnimations.includes(animCheck)) {
-           const { directory, file } = splitFilePath(fileName);
-           imageUrls.add(`${directory}/${animName}/${file}`);
-       }
-     }
+   const selectedSubcategoryValues = [];
+   $("#category-export-container .subcategory-checkbox:checked").each(function () {
+       selectedSubcategoryValues.push($(this).val());
    });
- }
+
+   if (selectedSubcategoryValues.length === 0) {
+       alert("Please select at least one subcategory to export.");
+       return;
+   }
  
- // PHASE 2: Download all images with the polite queue
- const urls = Array.from(imageUrls);
- if (urls.length > 0) {
-     await downloadImagesWithConcurrency(urls, 8, (completed, total) => {
-         $button.text(`Loading ${completed} of ${total} images...`);
-     });
- }
+   const bodyType = getBodyTypeName();
+   const categoriesToProcess = {};
+   const imageUrls = new Set();
+   let totalItemsToProcess = 0;
  
- // PHASE 3: Process and Zip (now that images are cached)
- $button.text("Zipping files...");
- const zip = new JSZip();
- const timestamp = newTimeStamp();
- let totalExported = 0;
- let totalFailed = 0;
- const failureDetails = [];
- 
- for (const itemToDraw of allItemsToProcess) {
-     try {
-       const mainCategoryName = $(`input.subcategory-checkbox[value="${itemToDraw.subCat}"]`).closest("details").find("summary strong").text();
-       const subCategoryName = $(`input.subcategory-checkbox[value="${itemToDraw.subCat}"]`).parent("label").text().trim();
-       const mainFolder = zip.folder(mainCategoryName);
-       const subFolder = mainFolder.folder(subCategoryName);
+   // PHASE 1: Build the structured plan and gather all image URLs
+   for (const subCatValue of selectedSubcategoryValues) {
+       const $checkbox = $(`input.subcategory-checkbox[value="${subCatValue}"]`);
+       const mainCategoryName = $checkbox.closest("details").find("summary strong").text();
+       const subCategoryName = $checkbox.parent("label").text().trim();
 
-       const itemCanvas = document.createElement("canvas");
-       itemCanvas.width = universalSheetWidth;
-       itemCanvas.height = universalSheetHeight;
-
-       await drawItemSheetForExportAsync(itemCanvas, itemToDraw, addedCustomAnimations || []);
-
-       const blob = await canvasToBlob(itemCanvas);
-       const pngFileName = `${itemToDraw.variant}.png`;
-
-       if (blob) {
-           subFolder.file(pngFileName, blob);
-           totalExported++;
-       } else {
-           totalFailed++;
-           failureDetails.push(`${subCategoryName}: Failed blob for ${itemToDraw.variant}`);
+       if (!categoriesToProcess[mainCategoryName]) {
+           categoriesToProcess[mainCategoryName] = {};
        }
-     } catch(err) {
-         totalFailed++;
-         failureDetails.push(`Error exporting ${itemToDraw.variant}: ${err.message}`);
-     }
- }
+       if (!categoriesToProcess[mainCategoryName][subCategoryName]) {
+           categoriesToProcess[mainCategoryName][subCategoryName] = [];
+       }
 
- if (totalExported > 0) {
-   const zipFileName = `categories_export_${timestamp}.zip`;
-   await downloadZip(zip, zipFileName);
- }
+       $(`#chooser input[type=radio][name="${subCatValue}"]`).each(function () {
+           const $item = $(this);
+           const parentName = $item.attr("parentName");
+           const variant = $item.attr("variant");
+           if (!parentName || !variant) return;
 
- let message = `Export completed!\nSuccessfully exported: ${totalExported} spritesheets`;
- if (totalFailed > 0) {
-   message += `\nFailed: ${totalFailed} spritesheets`;
-   if (failureDetails.length > 0) message += `\n\nDetails:\n${failureDetails.join('\n')}`;
- } else if (totalExported === 0) {
-   message = 'No valid items found or rendered for the selected categories.';
-   if (failureDetails.length > 0) message += `\n\nDetails:\n${failureDetails.join('\n')}`;
- }
- alert(message);
+           const $liVariant = $item.closest("li.variant-list");
+           const fileName = $item.data(`layer_1_${bodyType}`) || $liVariant.data(`layer_1_${bodyType}`) || "";
+           if (!fileName) return;
+
+           const supportedAnimations = $item.closest("[data-animations]").data("animations") || "";
+           const itemData = { fileName, parentName, variant, supportedAnimations };
+           categoriesToProcess[mainCategoryName][subCategoryName].push(itemData);
+           totalItemsToProcess++;
+
+           // Get image URLs for this item
+           for (const animName of Object.keys(base_animations)) {
+               let animCheck = animName;
+               if (animName === "combat_idle") animCheck = "combat";
+               if (animName === "backslash") animCheck = "1h_slash";
+               if (animName === "halfslash") animCheck = "1h_halfslash";
+               if (supportedAnimations.includes(animCheck)) {
+                   const { directory, file } = splitFilePath(fileName);
+                   imageUrls.add(`${directory}/${animName}/${file}`);
+               }
+           }
+       });
+   }
+ 
+   // PHASE 2: Download all images with the polite queue
+   const urls = Array.from(imageUrls);
+   if (urls.length > 0) {
+       await downloadImagesWithConcurrency(urls, 8, (completed, total) => {
+           $button.text(`Loading ${completed} of ${total} images...`);
+       });
+   }
+ 
+   // PHASE 3: Process and Zip (now that images are cached)
+   const zip = new JSZip();
+   const timestamp = newTimeStamp();
+   let totalExported = 0;
+   let totalFailed = 0;
+   const failureDetails = [];
+   let processedCount = 0;
+ 
+   for (const [mainCategoryName, subcategories] of Object.entries(categoriesToProcess)) {
+       const mainFolder = zip.folder(mainCategoryName);
+       for (const [subCategoryName, items] of Object.entries(subcategories)) {
+           const subFolder = mainFolder.folder(subCategoryName);
+           for (const itemToDraw of items) {
+               try {
+                   processedCount++;
+                   $button.text(`Zipping (${processedCount}/${totalItemsToProcess})...`);
+                   // Give the browser a chance to update the UI and not freeze
+                   await new Promise(resolve => setTimeout(resolve, 0));
+
+                   const itemCanvas = document.createElement("canvas");
+                   itemCanvas.width = universalSheetWidth;
+                   itemCanvas.height = universalSheetHeight;
+
+                   await drawItemSheetForExportAsync(itemCanvas, itemToDraw, addedCustomAnimations || []);
+
+                   const blob = await canvasToBlob(itemCanvas);
+                   const pngFileName = `${itemToDraw.variant}.png`;
+
+                   if (blob) {
+                       subFolder.file(pngFileName, blob);
+                       totalExported++;
+                   } else {
+                       totalFailed++;
+                       failureDetails.push(`${subCategoryName}: Failed blob for ${itemToDraw.variant}`);
+                   }
+               } catch(err) {
+                   totalFailed++;
+                   failureDetails.push(`Error exporting ${itemToDraw.variant}: ${err.message}`);
+               }
+           }
+       }
+   }
+
+   if (totalExported > 0) {
+       $button.text("Creating ZIP file...");
+       const zipFileName = `categories_export_${timestamp}.zip`;
+       await downloadZip(zip, zipFileName);
+   }
+
+   let message = `Export completed!\nSuccessfully exported: ${totalExported} spritesheets`;
+   if (totalFailed > 0) {
+       message += `\nFailed: ${totalFailed} spritesheets`;
+       if (failureDetails.length > 0) message += `\n\nDetails:\n${failureDetails.join('\n')}`;
+   } else if (totalExported === 0) {
+       message = 'No valid items found or rendered for the selected categories.';
+       if (failureDetails.length > 0) message += `\n\nDetails:\n${failureDetails.join('\n')}`;
+   }
+   alert(message);
 
 } catch (error) {
  console.error('Category export error:', error);
