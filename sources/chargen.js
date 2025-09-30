@@ -216,14 +216,21 @@ $("#preview-animations").toggleClass(
 );
 });
 
-// Toggle display of a list elements children when clicked
-// Again, do not multiple toggle when clicking on children
-$("#chooser ul>li").click(function (event) {
+// ** THE FIX IS HERE **
+// Use event delegation ("smart listener") for the main chooser UI.
+// This is robust and works even if the <li> elements are created dynamically after this script runs.
+$("#chooser").on("click", "ul > li", function (event) {
+// Check if the click was on a radio button or preview canvas inside the li, if so, do nothing.
+if ($(event.target).is('input[type=radio]') || $(event.target).is('canvas')) {
+ return;
+}
+
 $(this).children("span").toggleClass("condensed").toggleClass("expanded");
 const $ul = $(this).children("ul");
 $ul.toggle("slow").promise().done(drawPreviews);
 event.stopPropagation();
 });
+
 
 $("#collapse").click(function () {
 $("#chooser>details>ul ul").hide("slow");
@@ -1994,16 +2001,15 @@ if (index > -1) {
 // ** START: CATEGORY EXPORT FUNCTIONS **
 
 // Recursively builds the hierarchical UI for the export section
-function buildExportTreeLevel($sourceUl, $destContainer, path) {
+function buildExportTreeLevel($sourceUl, $destContainer) {
  $sourceUl.children("li").each(function () {
      const $li = $(this);
      const $span = $li.children("span").first();
      const name = $span.text().trim();
      const $nestedUl = $li.children("ul").first();
 
-     if (!name || $li.hasClass('variant-list')) return;
+     if (!name) return;
 
-     const currentPath = [...path, name];
      const $details = $("<details class='export-category-group'></details>");
      const $summary = $("<summary></summary>");
      const $masterCheckbox = $('<input type="checkbox" class="master-checkbox">');
@@ -2014,45 +2020,33 @@ function buildExportTreeLevel($sourceUl, $destContainer, path) {
      const $subContainer = $('<div class="subcategory-list"></div>');
 
      // If this is a "leaf" folder containing color variants
-     if ($li.find('li.variant-list').length > 0) {
-         $li.find('li.variant-list').each(function() {
-             const $variantLi = $(this);
-             const variantName = $variantLi.children("span").first().text().trim();
-             const $radios = $variantLi.find('input[type=radio]');
-             if (!variantName || $radios.length === 0) return;
-
-             const finalPath = [...currentPath, variantName].join('/');
-             const $variantDetails = $("<details class='export-category-group'></details>");
-             const $variantSummary = $("<summary></summary>");
-             const $variantMasterCheckbox = $('<input type="checkbox" class="master-checkbox">');
-
-             $variantSummary.append($variantMasterCheckbox).append(`<strong>${variantName}</strong>`);
-             $variantDetails.append($variantSummary);
+     if ($li.hasClass('variant-list')) {
+         const $radios = $li.find('input[type=radio]');
+         $radios.each(function() {
+             const $radio = $(this);
+             const color = $radio.attr('variant');
+             const radioName = $radio.attr('name');
+             if (!color || color === 'none') return;
              
-             const $variantContainer = $('<div class="variant-list"></div>');
-             $radios.each(function() {
-                 const $radio = $(this);
-                 const color = $radio.attr('variant');
-                 const radioName = $radio.attr('name');
-                 if (!color || color === 'none') return;
-                 
-                 const $label = $('<label></label>');
-                 const $checkbox = $(`<input type="checkbox" class="variant-checkbox">`);
-                 $checkbox.attr('data-path', finalPath);
-                 $checkbox.attr('data-variant', color);
-                 $checkbox.attr('data-name', radioName);
-                 
-                 $label.append($checkbox).append(` ${color}`);
-                 $variantContainer.append($label);
-             });
-             $variantDetails.append($variantContainer);
-             $subContainer.append($variantDetails);
+             const $label = $('<label></label>');
+             const $checkbox = $(`<input type="checkbox" class="variant-checkbox">`);
+
+             // Get the full path by traversing up the DOM
+             const pathParts = $li.parents('li').children('span').map(function() { return $(this).text().trim(); }).get().reverse();
+             const path = pathParts.join('/');
+
+             $checkbox.attr('data-path', path);
+             $checkbox.attr('data-variant', color);
+             $checkbox.attr('data-name', radioName);
+             
+             $label.append($checkbox).append(` ${color}`);
+             $subContainer.append($label);
          });
      }
      
      // If there are deeper nested folders, recurse
      if ($nestedUl.length > 0) {
-         buildExportTreeLevel($nestedUl, $subContainer, currentPath);
+         buildExportTreeLevel($nestedUl, $subContainer);
      }
      
      if ($subContainer.children().length > 0) {
@@ -2067,7 +2061,7 @@ const exportContainer = $("#category-export-container");
 exportContainer.empty();
 const $rootUl = $("#chooser > details > ul");
 if ($rootUl.length > 0) {
-   buildExportTreeLevel($rootUl, exportContainer, []);
+   buildExportTreeLevel($rootUl, exportContainer);
 }
 
 // --- Event Listeners ---
@@ -2076,31 +2070,26 @@ function updateButtonState() {
    $(".exportCategorySpritesheets").prop("disabled", !anyChecked);
 }
 
-exportContainer.on("change", ".master-checkbox", function(e) {
+exportContainer.on("change", "input[type=checkbox]", function(e) {
    e.stopPropagation();
-   const $master = $(this);
-   const isChecked = $master.is(":checked");
-   $master.closest('details').find('input[type=checkbox]').prop('checked', isChecked);
-   updateButtonState();
-});
+   const $changed = $(this);
+   const isChecked = $changed.is(':checked');
 
-exportContainer.on("change", ".variant-checkbox", function(e) {
-   e.stopPropagation();
-   $(this).parents('.export-category-group').each(function() {
-       const $group = $(this);
-       const $subCheckboxes = $group.find('.variant-checkbox');
-       const $master = $group.find('> summary > .master-checkbox');
-       const allChecked = $subCheckboxes.length === $subCheckboxes.filter(':checked').length;
+   // If a master checkbox is changed, update all children
+   if ($changed.hasClass('master-checkbox')) {
+       $changed.closest('details').find('input[type=checkbox]').prop('checked', isChecked);
+   }
+
+   // Update parent master checkboxes
+   $changed.parents('details').each(function() {
+       const $details = $(this);
+       const $children = $details.find('input[type=checkbox]').not('.master-checkbox');
+       const $master = $details.find('> summary > .master-checkbox');
+       const allChecked = $children.length > 0 && $children.length === $children.filter(':checked').length;
        $master.prop('checked', allChecked);
    });
-   updateButtonState();
-});
 
-// Make clicking summary toggle details
-exportContainer.on('click', 'summary', function(e) {
-   if (e.target.type === 'checkbox') return;
-   const details = $(this).parent('details');
-   details.attr('open', !details.attr('open'));
+   updateButtonState();
 });
 
 updateButtonState();
@@ -2234,7 +2223,7 @@ try {
            let currentFolder = zip;
            const pathParts = itemToDraw.path.split('/');
            pathParts.forEach(part => {
-               currentFolder = currentFolder.folder(part);
+               if (part) currentFolder = currentFolder.folder(part);
            });
 
            if (blob) {
