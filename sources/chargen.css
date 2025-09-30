@@ -143,7 +143,7 @@ input[type=button], input[type=reset] {
   margin-left: 15px;
 }
 
-summary {
+/*summary {
   display: none;
 }
 
