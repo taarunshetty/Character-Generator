@@ -1998,13 +1998,13 @@ if (index > -1) {
 
 // ** START: CATEGORY EXPORT FUNCTIONS **
 
-// This helper function must be in the global scope to be accessible
+// This helper function is now in the global scope to be accessible everywhere.
 function updateButtonState() {
  const anyChecked = $("#category-export-container .variant-checkbox:checked").length > 0;
  $(".exportCategorySpritesheets").prop("disabled", !anyChecked);
 }
 
-// Recursively builds the hierarchical UI for the export section
+// Recursively builds the hierarchical UI, passing the path down to ensure correctness.
 async function buildExportTreeLevel($sourceUl, $destContainer, path) {
  const children = $sourceUl.children("li");
  for (const li of children) {
@@ -2015,7 +2015,7 @@ async function buildExportTreeLevel($sourceUl, $destContainer, path) {
 
      if (!name) continue;
 
-     // This identifies a "leaf" node that contains the color variants
+     // This identifies a "leaf" folder containing the color variants
      if ($li.hasClass('variant-list')) {
          const $radios = $li.find('input[type=radio]');
          if ($radios.length > 0) {
@@ -2088,16 +2088,17 @@ exportContainer.on("change", "input[type=checkbox]", function(e) {
    const $changed = $(this);
    const isChecked = $changed.is(':checked');
 
-   // If a master checkbox is changed, update all children
+   // If a master checkbox is changed, update all children recursively
    if ($changed.hasClass('master-checkbox')) {
        $changed.closest('details').find('input[type=checkbox]').prop('checked', isChecked);
    }
 
-   // Update parent master checkboxes
+   // Update parent master checkboxes recursively
    $changed.parents('details').each(function() {
        const $details = $(this);
-       const $children = $details.find('input[type=checkbox]').not('.master-checkbox');
+       const $children = $details.find('.variant-checkbox'); // Only count variant checkboxes for accuracy
        const $master = $details.find('> summary > .master-checkbox');
+       // Check if there are any children and if all of them are checked
        const allChecked = $children.length > 0 && $children.length === $children.filter(':checked').length;
        $master.prop('checked', allChecked);
    });
@@ -2162,6 +2163,7 @@ try {
    // Find only the deepest level checkboxes for individual variants
    $("#category-export-container .variant-checkbox:checked").each(function () {
        const $checkbox = $(this);
+       // Create a new object for each item to prevent data contamination
        masterPlan.push({
            path: $checkbox.data('path'),
            variant: $checkbox.data('variant'),
@@ -2178,6 +2180,7 @@ try {
    const imageUrls = new Set();
  
    // PHASE 1: Gather all image URLs from the master plan
+   // This loop is now safer as it populates a fresh 'item' object.
    for(const item of masterPlan) {
        const $radio = $(`#chooser input[name="${item.name}"][variant="${item.variant}"]`);
        if ($radio.length === 0) continue;
