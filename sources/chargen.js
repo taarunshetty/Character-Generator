@@ -216,17 +216,15 @@ $("#preview-animations").toggleClass(
 );
 });
 
-// ** THE FIX IS HERE **
 // Use event delegation ("smart listener") for the main chooser UI.
-// This is robust and works even if the <li> elements are created dynamically after this script runs.
 $("#chooser").on("click", "ul > li", function (event) {
-// Check if the click was on a radio button or preview canvas inside the li, if so, do nothing.
-if ($(event.target).is('input[type=radio]') || $(event.target).is('canvas')) {
+// Check if the click was on an input or preview canvas inside the li, if so, do nothing.
+if ($(event.target).is('input, canvas, label')) {
  return;
 }
 
-$(this).children("span").toggleClass("condensed").toggleClass("expanded");
-const $ul = $(this).children("ul");
+$(this).children("span").first().toggleClass("condensed").toggleClass("expanded");
+const $ul = $(this).children("ul").first();
 $ul.toggle("slow").promise().done(drawPreviews);
 event.stopPropagation();
 });
@@ -2000,15 +1998,22 @@ if (index > -1) {
 
 // ** START: CATEGORY EXPORT FUNCTIONS **
 
+// This helper function must be in the global scope to be accessible
+function updateButtonState() {
+ const anyChecked = $("#category-export-container .variant-checkbox:checked").length > 0;
+ $(".exportCategorySpritesheets").prop("disabled", !anyChecked);
+}
+
 // Recursively builds the hierarchical UI for the export section
-function buildExportTreeLevel($sourceUl, $destContainer) {
- $sourceUl.children("li").each(function () {
-     const $li = $(this);
+async function buildExportTreeLevel($sourceUl, $destContainer) {
+ const children = $sourceUl.children("li");
+ for (const li of children) {
+     const $li = $(li);
      const $span = $li.children("span").first();
      const name = $span.text().trim();
      const $nestedUl = $li.children("ul").first();
 
-     if (!name) return;
+     if (!name) continue;
 
      const $details = $("<details class='export-category-group'></details>");
      const $summary = $("<summary></summary>");
@@ -2033,6 +2038,7 @@ function buildExportTreeLevel($sourceUl, $destContainer) {
 
              // Get the full path by traversing up the DOM
              const pathParts = $li.parents('li').children('span').map(function() { return $(this).text().trim(); }).get().reverse();
+             pathParts.push(name); // Add the current variant-list name
              const path = pathParts.join('/');
 
              $checkbox.attr('data-path', path);
@@ -2046,45 +2052,43 @@ function buildExportTreeLevel($sourceUl, $destContainer) {
      
      // If there are deeper nested folders, recurse
      if ($nestedUl.length > 0) {
-         buildExportTreeLevel($nestedUl, $subContainer);
+         await buildExportTreeLevel($nestedUl, $subContainer);
      }
      
      if ($subContainer.children().length > 0) {
          $details.append($subContainer);
          $destContainer.append($details);
      }
- });
+     // Yield to the main thread to prevent the browser from freezing
+     await new Promise(resolve => setTimeout(resolve, 0));
+ }
 }
 
-function populateCategoryCheckboxes() {
+async function populateCategoryCheckboxes() {
 const exportContainer = $("#category-export-container");
 exportContainer.empty();
 const $rootUl = $("#chooser > details > ul");
 if ($rootUl.length > 0) {
-   buildExportTreeLevel($rootUl, exportContainer);
+   await buildExportTreeLevel($rootUl, exportContainer);
 }
 
 // --- Event Listeners ---
-function updateButtonState() {
-   const anyChecked = $("#category-export-container .variant-checkbox:checked").length > 0;
-   $(".exportCategorySpritesheets").prop("disabled", !anyChecked);
-}
-
 exportContainer.on("change", "input[type=checkbox]", function(e) {
    e.stopPropagation();
    const $changed = $(this);
    const isChecked = $changed.is(':checked');
 
-   // If a master checkbox is changed, update all children
+   // If a master checkbox is changed, update all children recursively
    if ($changed.hasClass('master-checkbox')) {
        $changed.closest('details').find('input[type=checkbox]').prop('checked', isChecked);
    }
 
-   // Update parent master checkboxes
+   // Update parent master checkboxes recursively
    $changed.parents('details').each(function() {
        const $details = $(this);
-       const $children = $details.find('input[type=checkbox]').not('.master-checkbox');
+       const $children = $details.find('.variant-checkbox');
        const $master = $details.find('> summary > .master-checkbox');
+       // Check if there are any children and if all of them are checked
        const allChecked = $children.length > 0 && $children.length === $children.filter(':checked').length;
        $master.prop('checked', allChecked);
    });
