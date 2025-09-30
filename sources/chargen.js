@@ -639,9 +639,6 @@ const custom_animation = itemToDraw.custom_animation;
 if (custom_animation !== undefined) {
    try {
        const img = await loadImageAsync(itemToDraw.fileName);
-       // This part for custom animations might need more logic if they are not single files
-       // For now, assuming they are drawn at y=0 or based on a different logic.
-       // The original logic is preserved here:
        const y = customAnimationY(custom_animation, addedCustomAnimations);
        destCtx.drawImage(img, 0, y);
    } catch (error) {
@@ -2106,7 +2103,7 @@ async function downloadImagesWithConcurrency(urls, limit, onProgress) {
  await Promise.all(workers);
 }
 
-// Refactored category export function
+// Refactored category export function to process one subcategory at a time
 $(".exportCategorySpritesheets").click(async function () {
 const $button = $(this);
 const originalButtonText = $button.text();
@@ -2124,23 +2121,24 @@ try {
    }
  
    const bodyType = getBodyTypeName();
-   const categoriesToProcess = {};
-   const imageUrls = new Set();
-   let totalItemsToProcess = 0;
- 
-   // PHASE 1: Build the structured plan and gather all image URLs
+   let totalExported = 0;
+   let totalFailed = 0;
+   let batchNum = 0;
+   const totalBatches = selectedSubcategoryValues.length;
+   
+   // Process each selected subcategory as a separate batch
    for (const subCatValue of selectedSubcategoryValues) {
+       batchNum++;
        const $checkbox = $(`input.subcategory-checkbox[value="${subCatValue}"]`);
        const mainCategoryName = $checkbox.closest("details").find("summary strong").text();
        const subCategoryName = $checkbox.parent("label").text().trim();
+       const batchTimestamp = newTimeStamp();
 
-       if (!categoriesToProcess[mainCategoryName]) {
-           categoriesToProcess[mainCategoryName] = {};
-       }
-       if (!categoriesToProcess[mainCategoryName][subCategoryName]) {
-           categoriesToProcess[mainCategoryName][subCategoryName] = [];
-       }
-
+       $button.text(`Batch ${batchNum}/${totalBatches}: Processing ${subCategoryName}...`);
+       
+       // 1. GATHER data for this batch
+       const itemsToProcess = [];
+       const imageUrls = new Set();
        $(`#chooser input[type=radio][name="${subCatValue}"]`).each(function () {
            const $item = $(this);
            const parentName = $item.attr("parentName");
@@ -2152,11 +2150,8 @@ try {
            if (!fileName) return;
 
            const supportedAnimations = $item.closest("[data-animations]").data("animations") || "";
-           const itemData = { fileName, parentName, variant, supportedAnimations };
-           categoriesToProcess[mainCategoryName][subCategoryName].push(itemData);
-           totalItemsToProcess++;
+           itemsToProcess.push({ fileName, parentName, variant, supportedAnimations });
 
-           // Get image URLs for this item
            for (const animName of Object.keys(base_animations)) {
                let animCheck = animName;
                if (animName === "combat_idle") animCheck = "combat";
@@ -2168,81 +2163,57 @@ try {
                }
            }
        });
-   }
- 
-   // PHASE 2: Download all images with the polite queue
-   const urls = Array.from(imageUrls);
-   if (urls.length > 0) {
-       await downloadImagesWithConcurrency(urls, 8, (completed, total) => {
-           $button.text(`Loading ${completed} of ${total} images...`);
-       });
-   }
- 
-   // PHASE 3: Process and Zip (now that images are cached)
-   const zip = new JSZip();
-   const timestamp = newTimeStamp();
-   let totalExported = 0;
-   let totalFailed = 0;
-   const failureDetails = [];
-   let processedCount = 0;
- 
-   for (const [mainCategoryName, subcategories] of Object.entries(categoriesToProcess)) {
-       const mainFolder = zip.folder(mainCategoryName);
-       for (const [subCategoryName, items] of Object.entries(subcategories)) {
-           const subFolder = mainFolder.folder(subCategoryName);
-           for (const itemToDraw of items) {
-               try {
-                   processedCount++;
-                   $button.text(`Zipping (${processedCount}/${totalItemsToProcess})...`);
-                   // Give the browser a chance to update the UI and not freeze
-                   await new Promise(resolve => setTimeout(resolve, 0));
 
-                   const itemCanvas = document.createElement("canvas");
-                   itemCanvas.width = universalSheetWidth;
-                   itemCanvas.height = universalSheetHeight;
+       if (itemsToProcess.length === 0) continue;
 
-                   await drawItemSheetForExportAsync(itemCanvas, itemToDraw, addedCustomAnimations || []);
+       // 2. DOWNLOAD images for this batch
+       const urls = Array.from(imageUrls);
+       if (urls.length > 0) {
+           await downloadImagesWithConcurrency(urls, 8, (completed, total) => {
+               $button.text(`Batch ${batchNum}/${totalBatches}: Loading ${subCategoryName} (${completed}/${total})...`);
+           });
+       }
 
-                   const blob = await canvasToBlob(itemCanvas);
-                   const pngFileName = `${itemToDraw.variant}.png`;
+       // 3. ZIP and DOWNLOAD this batch
+       const zip = new JSZip();
+       let processedCount = 0;
 
-                   if (blob) {
-                       subFolder.file(pngFileName, blob);
-                       totalExported++;
-                   } else {
-                       totalFailed++;
-                       failureDetails.push(`${subCategoryName}: Failed blob for ${itemToDraw.variant}`);
-                   }
-               } catch(err) {
+       for (const itemToDraw of itemsToProcess) {
+           try {
+               processedCount++;
+               $button.text(`Batch ${batchNum}/${totalBatches}: Zipping ${subCategoryName} (${processedCount}/${itemsToProcess.length})...`);
+               await new Promise(resolve => setTimeout(resolve, 0));
+
+               const itemCanvas = document.createElement("canvas");
+               itemCanvas.width = universalSheetWidth;
+               itemCanvas.height = universalSheetHeight;
+
+               await drawItemSheetForExportAsync(itemCanvas, itemToDraw, addedCustomAnimations || []);
+               const blob = await canvasToBlob(itemCanvas);
+               
+               if (blob) {
+                   zip.file(`${itemToDraw.variant}.png`, blob);
+                   totalExported++;
+               } else {
                    totalFailed++;
-                   failureDetails.push(`Error exporting ${itemToDraw.variant}: ${err.message}`);
                }
+           } catch (err) {
+               totalFailed++;
+               console.error(`Failed to process item ${itemToDraw.variant}:`, err);
            }
        }
-   }
-
-   if (totalExported > 0) {
-       $button.text("Creating ZIP file...");
-       const zipFileName = `categories_export_${timestamp}.zip`;
+       
+       const zipFileName = `${mainCategoryName}-${subCategoryName}_${batchTimestamp}.zip`;
        await downloadZip(zip, zipFileName);
    }
 
-   let message = `Export completed!\nSuccessfully exported: ${totalExported} spritesheets`;
-   if (totalFailed > 0) {
-       message += `\nFailed: ${totalFailed} spritesheets`;
-       if (failureDetails.length > 0) message += `\n\nDetails:\n${failureDetails.join('\n')}`;
-   } else if (totalExported === 0) {
-       message = 'No valid items found or rendered for the selected categories.';
-       if (failureDetails.length > 0) message += `\n\nDetails:\n${failureDetails.join('\n')}`;
-   }
-   alert(message);
+ alert(`All export batches are complete.\nTotal successful spritesheets: ${totalExported}\nTotal failed: ${totalFailed}`);
 
 } catch (error) {
  console.error('Category export error:', error);
  alert(`Export failed: ${error.message}`);
 } finally {
  $button.text(originalButtonText);
- // Re-enable based on checkbox state, not just blindly
  const anyChecked = $("#category-export-container .subcategory-checkbox:checked").length > 0;
  $button.prop("disabled", !anyChecked);
 }
