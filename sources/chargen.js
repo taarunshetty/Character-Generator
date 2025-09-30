@@ -1991,73 +1991,119 @@ if (index > -1) {
 }
 }
 
-// ** START: NEW CATEGORY EXPORT UI FUNCTIONS **
+// ** START: CATEGORY EXPORT FUNCTIONS **
 
-// Rebuilds the category export UI to mirror the main chooser's hierarchy
+// Recursively builds the hierarchical UI for the export section
+function buildExportTreeLevel($sourceUl, $destContainer, path) {
+ $sourceUl.children("li").each(function () {
+     const $li = $(this);
+     const $span = $li.children("span").first();
+     const name = $span.text().trim();
+     const $nestedUl = $li.children("ul").first();
+
+     if (!name || $li.hasClass('variant-list')) return;
+
+     const currentPath = [...path, name];
+     const $details = $("<details class='export-category-group'></details>");
+     const $summary = $("<summary></summary>");
+     const $masterCheckbox = $('<input type="checkbox" class="master-checkbox">');
+     
+     $summary.append($masterCheckbox).append(`<strong>${name}</strong>`);
+     $details.append($summary);
+     
+     const $subContainer = $('<div class="subcategory-list"></div>');
+
+     // If this is a "leaf" folder containing color variants
+     if ($li.find('li.variant-list').length > 0) {
+         $li.find('li.variant-list').each(function() {
+             const $variantLi = $(this);
+             const variantName = $variantLi.children("span").first().text().trim();
+             const $radios = $variantLi.find('input[type=radio]');
+             if (!variantName || $radios.length === 0) return;
+
+             const finalPath = [...currentPath, variantName].join('/');
+             const $variantDetails = $("<details class='export-category-group'></details>");
+             const $variantSummary = $("<summary></summary>");
+             const $variantMasterCheckbox = $('<input type="checkbox" class="master-checkbox">');
+
+             $variantSummary.append($variantMasterCheckbox).append(`<strong>${variantName}</strong>`);
+             $variantDetails.append($variantSummary);
+             
+             const $variantContainer = $('<div class="variant-list"></div>');
+             $radios.each(function() {
+                 const $radio = $(this);
+                 const color = $radio.attr('variant');
+                 const radioName = $radio.attr('name');
+                 if (!color || color === 'none') return;
+                 
+                 const $label = $('<label></label>');
+                 const $checkbox = $(`<input type="checkbox" class="variant-checkbox">`);
+                 $checkbox.attr('data-path', finalPath);
+                 $checkbox.attr('data-variant', color);
+                 $checkbox.attr('data-name', radioName);
+                 
+                 $label.append($checkbox).append(` ${color}`);
+                 $variantContainer.append($label);
+             });
+             $variantDetails.append($variantContainer);
+             $subContainer.append($variantDetails);
+         });
+     }
+     
+     // If there are deeper nested folders, recurse
+     if ($nestedUl.length > 0) {
+         buildExportTreeLevel($nestedUl, $subContainer, currentPath);
+     }
+     
+     if ($subContainer.children().length > 0) {
+         $details.append($subContainer);
+         $destContainer.append($details);
+     }
+ });
+}
+
 function populateCategoryCheckboxes() {
 const exportContainer = $("#category-export-container");
 exportContainer.empty();
+const $rootUl = $("#chooser > details > ul");
+if ($rootUl.length > 0) {
+   buildExportTreeLevel($rootUl, exportContainer, []);
+}
 
-// Find top-level categories from the main chooser
-$("#chooser > details > ul > li").each(function() {
-   const mainCatLi = $(this);
-   const mainCatName = mainCatLi.children("span").first().text().trim();
+// --- Event Listeners ---
+function updateButtonState() {
+   const anyChecked = $("#category-export-container .variant-checkbox:checked").length > 0;
+   $(".exportCategorySpritesheets").prop("disabled", !anyChecked);
+}
 
-   if (!mainCatName) return;
-
-   const details = $("<details class='export-category-group'></details>");
-   const summary = $("<summary></summary>");
-   const masterCheckbox = $('<input type="checkbox" class="master-checkbox">');
-   
-   summary.append(masterCheckbox).append(`<strong>${mainCatName}</strong>`);
-   details.append(summary);
-
-   const subContainer = $('<div class="subcategory-list"></div>');
-
-   // Find subcategories within this main category
-   mainCatLi.find("ul > li.variant-list").each(function() {
-       const subCatLi = $(this);
-       const subCatName = subCatLi.children("span").first().text().trim();
-       const radioName = subCatLi.find("input[type=radio]").first().attr("name");
-
-       if (radioName && subCatName) {
-           const label = $("<label></label>");
-           const checkbox = $(`<input type="checkbox" class="subcategory-checkbox" value="${radioName}">`);
-           label.append(checkbox).append(` ${subCatName}`);
-           subContainer.append(label);
-       }
-   });
-
-   if (subContainer.children().length > 0) {
-       details.append(subContainer);
-       exportContainer.append(details);
-   }
-});
-
-// Add event listeners for new UI
-// Master checkbox controls its children
-exportContainer.on("change", ".master-checkbox", function() {
+exportContainer.on("change", ".master-checkbox", function(e) {
+   e.stopPropagation();
    const $master = $(this);
    const isChecked = $master.is(":checked");
-   $master.closest("details").find(".subcategory-checkbox").prop("checked", isChecked).trigger("change");
+   $master.closest('details').find('input[type=checkbox]').prop('checked', isChecked);
+   updateButtonState();
 });
 
-// Sub-checkboxes update their master
-exportContainer.on("change", ".subcategory-checkbox", function() {
-   const $details = $(this).closest("details");
-   const $subCheckboxes = $details.find(".subcategory-checkbox");
-   const $masterCheckbox = $details.find(".master-checkbox");
-
-   const allChecked = $subCheckboxes.length === $subCheckboxes.filter(":checked").length;
-   $masterCheckbox.prop("checked", allChecked);
-   
-   // Update main download button state
-   const anyChecked = $("#category-export-container .subcategory-checkbox:checked").length > 0;
-   $(".exportCategorySpritesheets").prop("disabled", !anyChecked);
+exportContainer.on("change", ".variant-checkbox", function(e) {
+   e.stopPropagation();
+   $(this).parents('.export-category-group').each(function() {
+       const $group = $(this);
+       const $subCheckboxes = $group.find('.variant-checkbox');
+       const $master = $group.find('> summary > .master-checkbox');
+       const allChecked = $subCheckboxes.length === $subCheckboxes.filter(':checked').length;
+       $master.prop('checked', allChecked);
+   });
+   updateButtonState();
 });
 
-// Initial state of download button
-$(".exportCategorySpritesheets").prop("disabled", true);
+// Make clicking summary toggle details
+exportContainer.on('click', 'summary', function(e) {
+   if (e.target.type === 'checkbox') return;
+   const details = $(this).parent('details');
+   details.attr('open', !details.attr('open'));
+});
+
+updateButtonState();
 }
 
 // Polite queue for downloading images with controlled concurrency
@@ -2103,123 +2149,128 @@ async function downloadImagesWithConcurrency(urls, limit, onProgress) {
  await Promise.all(workers);
 }
 
-// Refactored category export function to process one subcategory at a time
+// Refactored category export function for single ZIP file with granular selection
 $(".exportCategorySpritesheets").click(async function () {
 const $button = $(this);
 const originalButtonText = $button.text();
 $button.prop("disabled", true);
 
 try {
-   const selectedSubcategoryValues = [];
-   $("#category-export-container .subcategory-checkbox:checked").each(function () {
-       selectedSubcategoryValues.push($(this).val());
+   const masterPlan = [];
+   // Find only the deepest level checkboxes for individual variants
+   $("#category-export-container .variant-checkbox:checked").each(function () {
+       const $checkbox = $(this);
+       masterPlan.push({
+           path: $checkbox.data('path'),
+           variant: $checkbox.data('variant'),
+           name: $checkbox.data('name')
+       });
    });
 
-   if (selectedSubcategoryValues.length === 0) {
-       alert("Please select at least one subcategory to export.");
+   if (masterPlan.length === 0) {
+       alert("Please select at least one item variant to export.");
        return;
    }
  
    const bodyType = getBodyTypeName();
+   const imageUrls = new Set();
+ 
+   // PHASE 1: Gather all image URLs from the master plan
+   for(const item of masterPlan) {
+       const $radio = $(`#chooser input[name="${item.name}"][variant="${item.variant}"]`);
+       if ($radio.length === 0) continue;
+       
+       const $liVariant = $radio.closest("li.variant-list");
+       const fileName = $radio.data(`layer_1_${bodyType}`) || $liVariant.data(`layer_1_${bodyType}`) || "";
+       if (!fileName) continue;
+
+       item.fileName = fileName; // Attach fileName to the plan
+       item.supportedAnimations = $radio.closest("[data-animations]").data("animations") || "";
+
+       for (const animName of Object.keys(base_animations)) {
+           let animCheck = animName;
+           if (animName === "combat_idle") animCheck = "combat";
+           if (animName === "backslash") animCheck = "1h_slash";
+           if (animName === "halfslash") animCheck = "1h_halfslash";
+           if (item.supportedAnimations.includes(animCheck)) {
+               const { directory, file } = splitFilePath(fileName);
+               imageUrls.add(`${directory}/${animName}/${file}`);
+           }
+       }
+   }
+ 
+   // PHASE 2: Download all images with the polite queue
+   const urls = Array.from(imageUrls);
+   if (urls.length > 0) {
+       await downloadImagesWithConcurrency(urls, 8, (completed, total) => {
+           $button.text(`Loading ${completed} of ${total} images...`);
+       });
+   }
+ 
+   // PHASE 3: Process and Zip into a single ZIP file
+   const zip = new JSZip();
+   const timestamp = newTimeStamp();
    let totalExported = 0;
    let totalFailed = 0;
-   let batchNum = 0;
-   const totalBatches = selectedSubcategoryValues.length;
-   
-   // Process each selected subcategory as a separate batch
-   for (const subCatValue of selectedSubcategoryValues) {
-       batchNum++;
-       const $checkbox = $(`input.subcategory-checkbox[value="${subCatValue}"]`);
-       const mainCategoryName = $checkbox.closest("details").find("summary strong").text();
-       const subCategoryName = $checkbox.parent("label").text().trim();
-       const batchTimestamp = newTimeStamp();
+   let processedCount = 0;
+ 
+   for (const itemToDraw of masterPlan) {
+       if (!itemToDraw.fileName) continue; // Skip if we couldn't find file data
+       try {
+           processedCount++;
+           $button.text(`Zipping (${processedCount}/${masterPlan.length})...`);
+           await new Promise(resolve => setTimeout(resolve, 0));
 
-       $button.text(`Batch ${batchNum}/${totalBatches}: Processing ${subCategoryName}...`);
-       
-       // 1. GATHER data for this batch
-       const itemsToProcess = [];
-       const imageUrls = new Set();
-       $(`#chooser input[type=radio][name="${subCatValue}"]`).each(function () {
-           const $item = $(this);
-           const parentName = $item.attr("parentName");
-           const variant = $item.attr("variant");
-           if (!parentName || !variant) return;
+           const itemCanvas = document.createElement("canvas");
+           itemCanvas.width = universalSheetWidth;
+           itemCanvas.height = universalSheetHeight;
 
-           const $liVariant = $item.closest("li.variant-list");
-           const fileName = $item.data(`layer_1_${bodyType}`) || $liVariant.data(`layer_1_${bodyType}`) || "";
-           if (!fileName) return;
+           await drawItemSheetForExportAsync(itemCanvas, itemToDraw, addedCustomAnimations || []);
 
-           const supportedAnimations = $item.closest("[data-animations]").data("animations") || "";
-           itemsToProcess.push({ fileName, parentName, variant, supportedAnimations });
-
-           for (const animName of Object.keys(base_animations)) {
-               let animCheck = animName;
-               if (animName === "combat_idle") animCheck = "combat";
-               if (animName === "backslash") animCheck = "1h_slash";
-               if (animName === "halfslash") animCheck = "1h_halfslash";
-               if (supportedAnimations.includes(animCheck)) {
-                   const { directory, file } = splitFilePath(fileName);
-                   imageUrls.add(`${directory}/${animName}/${file}`);
-               }
-           }
-       });
-
-       if (itemsToProcess.length === 0) continue;
-
-       // 2. DOWNLOAD images for this batch
-       const urls = Array.from(imageUrls);
-       if (urls.length > 0) {
-           await downloadImagesWithConcurrency(urls, 8, (completed, total) => {
-               $button.text(`Batch ${batchNum}/${totalBatches}: Loading ${subCategoryName} (${completed}/${total})...`);
+           const blob = await canvasToBlob(itemCanvas);
+           const pngFileName = `${itemToDraw.variant}.png`;
+           
+           // Create nested folders from the path
+           let currentFolder = zip;
+           const pathParts = itemToDraw.path.split('/');
+           pathParts.forEach(part => {
+               currentFolder = currentFolder.folder(part);
            });
-       }
 
-       // 3. ZIP and DOWNLOAD this batch
-       const zip = new JSZip();
-       let processedCount = 0;
-
-       for (const itemToDraw of itemsToProcess) {
-           try {
-               processedCount++;
-               $button.text(`Batch ${batchNum}/${totalBatches}: Zipping ${subCategoryName} (${processedCount}/${itemsToProcess.length})...`);
-               await new Promise(resolve => setTimeout(resolve, 0));
-
-               const itemCanvas = document.createElement("canvas");
-               itemCanvas.width = universalSheetWidth;
-               itemCanvas.height = universalSheetHeight;
-
-               await drawItemSheetForExportAsync(itemCanvas, itemToDraw, addedCustomAnimations || []);
-               const blob = await canvasToBlob(itemCanvas);
-               
-               if (blob) {
-                   zip.file(`${itemToDraw.variant}.png`, blob);
-                   totalExported++;
-               } else {
-                   totalFailed++;
-               }
-           } catch (err) {
+           if (blob) {
+               currentFolder.file(pngFileName, blob);
+               totalExported++;
+           } else {
                totalFailed++;
-               console.error(`Failed to process item ${itemToDraw.variant}:`, err);
            }
+       } catch(err) {
+           totalFailed++;
+           console.error(`Failed to process item ${itemToDraw.variant}:`, err);
        }
-       
-       const zipFileName = `${mainCategoryName}-${subCategoryName}_${batchTimestamp}.zip`;
+   }
+
+   if (totalExported > 0) {
+       $button.text("Creating ZIP file...");
+       const zipFileName = `lpc_export_${timestamp}.zip`;
        await downloadZip(zip, zipFileName);
    }
 
- alert(`All export batches are complete.\nTotal successful spritesheets: ${totalExported}\nTotal failed: ${totalFailed}`);
+   let message = `Export completed!\nSuccessfully exported: ${totalExported} spritesheets`;
+   if (totalFailed > 0) {
+       message += `\nFailed to process: ${totalFailed} spritesheets`;
+   }
+   alert(message);
 
 } catch (error) {
  console.error('Category export error:', error);
  alert(`Export failed: ${error.message}`);
 } finally {
  $button.text(originalButtonText);
- const anyChecked = $("#category-export-container .subcategory-checkbox:checked").length > 0;
- $button.prop("disabled", !anyChecked);
+ updateButtonState();
 }
 });
 
-// ** END: NEW CATEGORY EXPORT UI FUNCTIONS **
+// ** END: CATEGORY EXPORT FUNCTIONS **
 
 // Call this function when the page loads after the initial UI setup is complete.
 populateCategoryCheckboxes();
