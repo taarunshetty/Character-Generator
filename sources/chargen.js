@@ -2203,7 +2203,8 @@ try {
            }
        }
    }
- 
+    // ADD THIS LINE:
+    console.log(JSON.stringify(masterPlan, null, 2));
    // PHASE 2: Download all images with the polite queue
    const urls = Array.from(imageUrls);
    if (urls.length > 0) {
