@@ -2005,7 +2005,7 @@ function updateButtonState() {
 }
 
 // Recursively builds the hierarchical UI for the export section
-async function buildExportTreeLevel($sourceUl, $destContainer) {
+async function buildExportTreeLevel($sourceUl, $destContainer, path) {
  const children = $sourceUl.children("li");
  for (const li of children) {
      const $li = $(li);
@@ -2015,49 +2015,59 @@ async function buildExportTreeLevel($sourceUl, $destContainer) {
 
      if (!name) continue;
 
-     const $details = $("<details class='export-category-group'></details>");
-     const $summary = $("<summary></summary>");
-     const $masterCheckbox = $('<input type="checkbox" class="master-checkbox">');
-     
-     $summary.append($masterCheckbox).append(`<strong>${name}</strong>`);
-     $details.append($summary);
-     
-     const $subContainer = $('<div class="subcategory-list"></div>');
-
-     // If this is a "leaf" folder containing color variants
+     // This identifies a "leaf" node that contains the color variants
      if ($li.hasClass('variant-list')) {
          const $radios = $li.find('input[type=radio]');
-         $radios.each(function() {
-             const $radio = $(this);
-             const color = $radio.attr('variant');
-             const radioName = $radio.attr('name');
-             if (!color || color === 'none') return;
+         if ($radios.length > 0) {
+             const currentPath = [...path, name];
+             const finalPath = currentPath.join('/');
              
-             const $label = $('<label></label>');
-             const $checkbox = $(`<input type="checkbox" class="variant-checkbox">`);
-
-             // Get the full path by traversing up the DOM
-             const pathParts = $li.parents('li').children('span').map(function() { return $(this).text().trim(); }).get().reverse();
-             pathParts.push(name); // Add the current variant-list name
-             const path = pathParts.join('/');
-
-             $checkbox.attr('data-path', path);
-             $checkbox.attr('data-variant', color);
-             $checkbox.attr('data-name', radioName);
+             const $details = $("<details class='export-category-group'></details>");
+             const $summary = $("<summary></summary>");
+             const $masterCheckbox = $('<input type="checkbox" class="master-checkbox">');
              
-             $label.append($checkbox).append(` ${color}`);
-             $subContainer.append($label);
-         });
-     }
-     
-     // If there are deeper nested folders, recurse
-     if ($nestedUl.length > 0) {
-         await buildExportTreeLevel($nestedUl, $subContainer);
-     }
-     
-     if ($subContainer.children().length > 0) {
-         $details.append($subContainer);
-         $destContainer.append($details);
+             $summary.append($masterCheckbox).append(`<strong>${name}</strong>`);
+             $details.append($summary);
+
+             const $variantContainer = $('<div class="variant-list"></div>');
+             $radios.each(function() {
+                 const $radio = $(this);
+                 const color = $radio.attr('variant');
+                 const radioName = $radio.attr('name');
+                 if (!color || color === 'none') return;
+                 
+                 const $label = $('<label></label>');
+                 const $checkbox = $(`<input type="checkbox" class="variant-checkbox">`);
+                 
+                 $checkbox.attr('data-path', finalPath);
+                 $checkbox.attr('data-variant', color);
+                 $checkbox.attr('data-name', radioName);
+                 
+                 $label.append($checkbox).append(` ${color}`);
+                 $variantContainer.append($label);
+             });
+             $details.append($variantContainer);
+             $destContainer.append($details);
+         }
+     } 
+     // This identifies a "branch" node that contains more folders
+     else if ($nestedUl.length > 0) {
+         const currentPath = [...path, name];
+         const $details = $("<details class='export-category-group'></details>");
+         const $summary = $("<summary></summary>");
+         const $masterCheckbox = $('<input type="checkbox" class="master-checkbox">');
+         
+         $summary.append($masterCheckbox).append(`<strong>${name}</strong>`);
+         $details.append($summary);
+         
+         const $subContainer = $('<div class="subcategory-list"></div>');
+         
+         await buildExportTreeLevel($nestedUl, $subContainer, currentPath);
+         
+         if ($subContainer.children().length > 0) {
+             $details.append($subContainer);
+             $destContainer.append($details);
+         }
      }
      // Yield to the main thread to prevent the browser from freezing
      await new Promise(resolve => setTimeout(resolve, 0));
@@ -2069,7 +2079,7 @@ const exportContainer = $("#category-export-container");
 exportContainer.empty();
 const $rootUl = $("#chooser > details > ul");
 if ($rootUl.length > 0) {
-   await buildExportTreeLevel($rootUl, exportContainer);
+   await buildExportTreeLevel($rootUl, exportContainer, []);
 }
 
 // --- Event Listeners ---
@@ -2078,17 +2088,16 @@ exportContainer.on("change", "input[type=checkbox]", function(e) {
    const $changed = $(this);
    const isChecked = $changed.is(':checked');
 
-   // If a master checkbox is changed, update all children recursively
+   // If a master checkbox is changed, update all children
    if ($changed.hasClass('master-checkbox')) {
        $changed.closest('details').find('input[type=checkbox]').prop('checked', isChecked);
    }
 
-   // Update parent master checkboxes recursively
+   // Update parent master checkboxes
    $changed.parents('details').each(function() {
        const $details = $(this);
-       const $children = $details.find('.variant-checkbox');
+       const $children = $details.find('input[type=checkbox]').not('.master-checkbox');
        const $master = $details.find('> summary > .master-checkbox');
-       // Check if there are any children and if all of them are checked
        const allChecked = $children.length > 0 && $children.length === $children.filter(':checked').length;
        $master.prop('checked', allChecked);
    });
