@@ -2203,8 +2203,6 @@ try {
            }
        }
    }
-    // ADD THIS LINE:
-    console.log(JSON.stringify(masterPlan, null, 2));
    // PHASE 2: Download all images with the polite queue
    const urls = Array.from(imageUrls);
    if (urls.length > 0) {
@@ -2221,6 +2219,7 @@ try {
    let processedCount = 0;
  
    for (const itemToDraw of masterPlan) {
+    console.log('Processing item:', JSON.stringify(itemToDraw));
        if (!itemToDraw.fileName) continue; // Skip if we couldn't find file data
        try {
            processedCount++;
