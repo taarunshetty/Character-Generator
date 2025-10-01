@@ -217,14 +217,17 @@ $("#preview-animations").toggleClass(
 });
 
 // Use event delegation ("smart listener") for the main chooser UI.
-$("#chooser").on("click", "ul > li", function (event) {
-// Check if the click was on an input or preview canvas inside the li, if so, do nothing.
-if ($(event.target).is('input, canvas, label')) {
- return;
+$("#chooser").on("click", "ul > li > span", function (event) {
+const $span = $(this);
+const $parentLi = $span.parent();
+
+// Do not toggle for the final variant lists, as they have no sub-folders
+if ($parentLi.hasClass('variant-list')) {
+   return;
 }
 
-$(this).children("span").first().toggleClass("condensed").toggleClass("expanded");
-const $ul = $(this).children("ul").first();
+$span.toggleClass("condensed").toggleClass("expanded");
+const $ul = $parentLi.children("ul").first();
 $ul.toggle("slow").promise().done(drawPreviews);
 event.stopPropagation();
 });
@@ -2033,15 +2036,15 @@ async function buildExportTreeLevel($sourceUl, $destContainer, path) {
              $radios.each(function() {
                  const $radio = $(this);
                  const color = $radio.attr('variant');
-                 const radioName = $radio.attr('name');
-                 if (!color || color === 'none') return;
+                 const radioId = $radio.attr('id');
+                 if (!color || color === 'none' || !radioId) return;
                  
                  const $label = $('<label></label>');
                  const $checkbox = $(`<input type="checkbox" class="variant-checkbox">`);
                  
+                 // The definitive fix: store the unique radio button ID.
                  $checkbox.attr('data-path', finalPath);
-                 $checkbox.attr('data-variant', color);
-                 $checkbox.attr('data-name', radioName);
+                 $checkbox.attr('data-radio-id', radioId);
                  
                  $label.append($checkbox).append(` ${color}`);
                  $variantContainer.append($label);
@@ -2096,9 +2099,8 @@ exportContainer.on("change", "input[type=checkbox]", function(e) {
    // Update parent master checkboxes recursively
    $changed.parents('details').each(function() {
        const $details = $(this);
-       const $children = $details.find('.variant-checkbox'); // Only count variant checkboxes for accuracy
+       const $children = $details.find('.variant-checkbox, .master-checkbox').not($changed);
        const $master = $details.find('> summary > .master-checkbox');
-       // Check if there are any children and if all of them are checked
        const allChecked = $children.length > 0 && $children.length === $children.filter(':checked').length;
        $master.prop('checked', allChecked);
    });
@@ -2160,14 +2162,28 @@ $button.prop("disabled", true);
 
 try {
    const masterPlan = [];
-   // Find only the deepest level checkboxes for individual variants
+   const bodyType = getBodyTypeName();
+   
+   // PHASE 1: Build the master plan with complete, correct data in one pass.
    $("#category-export-container .variant-checkbox:checked").each(function () {
        const $checkbox = $(this);
-       // Create a new object for each item to prevent data contamination
+       const radioId = $checkbox.data('radio-id');
+       if (!radioId) return;
+
+       // The definitive fix: Use the unique ID for a 100% reliable lookup.
+       const $radio = $(`#${radioId}`);
+       if ($radio.length === 0) return;
+       
+       const $liVariant = $radio.closest("li.variant-list");
+       const fileName = $radio.data(`layer_1_${bodyType}`) || $liVariant.data(`layer_1_${bodyType}`) || "";
+       if (!fileName) return;
+
+       // Create a complete, new object and push it. This prevents data contamination.
        masterPlan.push({
            path: $checkbox.data('path'),
-           variant: $checkbox.data('variant'),
-           name: $checkbox.data('name')
+           variant: $radio.attr('variant'), // Get variant from the authoritative source
+           fileName: fileName,
+           supportedAnimations: $radio.closest("[data-animations]").data("animations") || ""
        });
    });
 
@@ -2176,33 +2192,23 @@ try {
        return;
    }
  
-   const bodyType = getBodyTypeName();
    const imageUrls = new Set();
  
-   // PHASE 1: Gather all image URLs from the master plan
-   // This loop is now safer as it populates a fresh 'item' object.
+   // Gather all image URLs from the master plan
    for(const item of masterPlan) {
-       const $radio = $(`#chooser input[name="${item.name}"][variant="${item.variant}"]`);
-       if ($radio.length === 0) continue;
-       
-       const $liVariant = $radio.closest("li.variant-list");
-       const fileName = $radio.data(`layer_1_${bodyType}`) || $liVariant.data(`layer_1_${bodyType}`) || "";
-       if (!fileName) continue;
-
-       item.fileName = fileName; // Attach fileName to the plan
-       item.supportedAnimations = $radio.closest("[data-animations]").data("animations") || "";
-
+       if (!item.fileName) continue;
        for (const animName of Object.keys(base_animations)) {
            let animCheck = animName;
            if (animName === "combat_idle") animCheck = "combat";
            if (animName === "backslash") animCheck = "1h_slash";
            if (animName === "halfslash") animCheck = "1h_halfslash";
            if (item.supportedAnimations.includes(animCheck)) {
-               const { directory, file } = splitFilePath(fileName);
+               const { directory, file } = splitFilePath(item.fileName);
                imageUrls.add(`${directory}/${animName}/${file}`);
            }
        }
    }
+ 
    // PHASE 2: Download all images with the polite queue
    const urls = Array.from(imageUrls);
    if (urls.length > 0) {
@@ -2219,7 +2225,6 @@ try {
    let processedCount = 0;
  
    for (const itemToDraw of masterPlan) {
-    console.log('Processing item:', JSON.stringify(itemToDraw));
        if (!itemToDraw.fileName) continue; // Skip if we couldn't find file data
        try {
            processedCount++;
